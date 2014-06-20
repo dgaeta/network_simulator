@@ -53,6 +53,17 @@ class NBServer:
         pass
 
 
+def computation_speed(self, node_id):
+    if node_id <= 8:
+        return 4
+    elif node_id <= 49:
+        return 3
+    elif node_id <= 343:
+        return 2 
+    else:
+        return
+
+
 
 def process(node_id):
         logging.debug(' processing incoming packet at %d' % node_id)

@@ -182,7 +182,7 @@ class Network(object):
 		self.entry1 = tk.Entry(self.frame, textvariable=self.entry_value)
 		self.entry1.pack()
 
-		self.b = tk.Button(self.frame, text="Highlight", width=10, command=lambda: self.callback())
+		self.b = tk.Button(self.frame, text="Highlight", width=10, command=lambda: self.highlight())
 		self.b.pack()
 
 		self.b = tk.Button(self.frame, text="Regions", width=10, command=lambda: self.test_regions())
@@ -214,21 +214,18 @@ class Network(object):
 				self.canvas.itemconfig(self.nodes[self.get_actual_node(i)].canvas_id, outline='grey', width=1.0)
 				self.canvas.update()
 
-	def callback(self):
-		""" Used for highlighting a single node 
+	def highlight(self):
+		""" Used for highlighting a single node """
 		node_id = int(self.entry_value.get())
 		self.entry_value.set(node_id)
 		print node_id
 		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='purple', width=2.0)
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='purple', width=2.0)
 		self.canvas.update()
-		sleep(self.delay/1000)
-		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='grey', width=1.0)
-		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='grey', width=1.0)
-		self.canvas.update()
-		"""
-
-		""" Used for highlighting a region of nodes """
+		self.root.after(2000, self.unhighlight, node_id)
+		
+		
+		""" Used for highlighting a region of nodes 
 		region = int(self.entry_value.get())
 		self.entry_value.set(region)
 		print region
@@ -241,7 +238,12 @@ class Network(object):
 			self.canvas.itemconfig(self.nodes[self.regions[region][i]].canvas_id, outline='grey', width=1.0)
 			self.canvas.itemconfig(self.nodes[self.get_actual_node(self.regions[region][i])].canvas_id, outline='grey', width=1.0)
 			#self.canvas.update()
+		"""
 
+	def unhighlight(self,node_id):
+		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='grey', width=1.0)
+		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='grey', width=1.0)
+		self.canvas.update()
 
 	def DDoS(self):
 		DDoS_region = random.randint(0,len(self.regions)-1)
@@ -584,7 +586,16 @@ class Network(object):
 				#self.canvas.update_idletasks()
 			self.root.after_idle(self.deliver_in_transit_packets)      
 		
-		
+
+	def computation_power(self, node_id):
+		if node_id <= 7:
+			return 4
+		elif node_id <= 56:
+			return 3
+		elif node_id <= 399:
+			return 2
+		else: 
+			return 1
 		
 	def process(self, node_id):
 		#logging.debug(' processing incoming packet at %d' % node_id)
@@ -596,125 +607,128 @@ class Network(object):
 		#i = 0
 		#while i < iterations:
 		#	i += 1
-		if (not is_empty(self.nodes[node_id].incoming)):
-			logging.debug(' processing incoming packet at %d' % node_id)
-			packet = self.nodes[node_id].incoming.popleft()
-			self.nodes[node_id].total_load -= packet['size']
-			pack = str(packet)
-			logging.debug(" packet data: %s", pack) 
-			
-			#Update the color now that we popped an incoming packet
-			""" TODO: TEST LOCATION OF THIS BLOCK"""
-			color_dict = self.get_color(node_id)
-			self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-			self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-
-
-			if packet['_type'] == 'request':
-				# Packet is a request      
-				content_name = packet['content_name']
-				requester_id = packet['from_id']    
+		comp_power = self.computation_power(node_id)
+		i = 0 
+		while i < comp_power:
+			if (not is_empty(self.nodes[node_id].incoming)):
+				logging.debug(' processing incoming packet at %d' % node_id)
+				packet = self.nodes[node_id].incoming.popleft()
+				self.nodes[node_id].total_load -= packet['size']
+				pack = str(packet)
+				logging.debug(" packet data: %s", pack) 
 				
-				# Case 1: content in cache
-				if content_name in self.nodes[node_id].content_store:
-					if requester_id == 0:
-						logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
-						# Case where active request hasnt been created yet but content in cache
-						try: 
+				#Update the color now that we popped an incoming packet
+				""" TODO: TEST LOCATION OF THIS BLOCK"""
+				color_dict = self.get_color(node_id)
+				self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+
+
+				if packet['_type'] == 'request':
+					# Packet is a request      
+					content_name = packet['content_name']
+					requester_id = packet['from_id']    
+					
+					# Case 1: content in cache
+					if content_name in self.nodes[node_id].content_store:
+						if requester_id == 0:
+							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
+							# Case where active request hasnt been created yet but content in cache
+							try: 
+								del self.active_requests[node_id][content_name] 
+								if len(self.active_requests[node_id])==0:
+									del self.active_requests[node_id]
+							except KeyError:
+								pass
+						else:
+							self.nodes[node_id].outgoing_packet({ 'content_name': content_name, 'from_id':node_id,
+																 'content_data':self.nodes[node_id].content_store[content_name], 
+																 'dest_id':requester_id, '_type':'response', 'size':1},
+																 self.in_transit_packets)
+							logging.debug(" content %s already in cache", content_name) 
+							logging.debug(" sent content back to  %d ", requester_id)
+							
+					# Case 2: duplicate request exists
+					elif content_name in self.nodes[node_id].pending_table:   
+						self.nodes[node_id].pending_table[content_name] += [requester_id]
+						#logging.debug(" duplicate request for content %s , added requester_id %d to PT", packet[content_name], packet[requester_id]) 
+						logging.debug(" duplicate request for content , added requester_id to PT") 
+						#if (requester_id == 0):
+					  	#	self.active_requests[node_id] = {content_name:1}
+						
+					# Case 3: no pending request, but location lives in children, create entry in PT, send request to child
+					elif content_name in self.nodes[node_id].forwarding_table:
+						directed_child_id  = self.nodes[node_id].forwarding_table[content_name]   #direction of child where destination node is contained 
+						self.nodes[node_id].pending_table[content_name] = [requester_id]          # entry in PT created
+						self.nodes[node_id].outgoing_packet( {'content_name': content_name , 'dest_id':directed_child_id, 
+															  'from_id': node_id, '_type': 'request', 'size':1}, self.in_transit_packets)
+						logging.debug(" location content %s known, entry for requester %d created in PT", content_name, requester_id) 
+						logging.debug(" forwarded request to child %d ", directed_child_id )
+						#if (requester_id == 0):
+					  	#	self.active_requests[node_id] = {content_name:1}
+
+					# Case 4: no duplicate, add to PT, forward to parent 
+					else:
+						self.nodes[node_id].pending_table[content_name] = [requester_id]
+						parent_id = self.get_parent(node_id)
+						self.nodes[node_id].outgoing_packet({'content_name':content_name, 'from_id':node_id,
+															 'dest_id': parent_id, "_type": 'request', 'size':1 }, self.in_transit_packets)
+						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request to parent %d", content_name, requester_id, parent_id) 
+					  	# IF this is the source then add to active_requests
+					  	if (requester_id == 0):
+					  		self.active_requests[node_id] = {content_name:1}
+
+
+
+				elif packet['_type'] == 'response':
+					# packet is a response
+					content_name = packet['content_name']
+					data = packet['content_data']    
+
+					# Case 1: node is source of request, 0 signifies it is the source of request
+					if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
+						logging.debug(" DONE! I am the source: %d" % node_id)
+						self.nodes[node_id].content_store[content_name] = data
+						logging.debug(" Added content (%s) to content store"  % content_name)
+						del self.nodes[node_id].pending_table[content_name]
+						logging.debug(" Deleted content (%s) from PT"  % content_name)
+						# Remove from the networks active requests monitor
+						try:
 							del self.active_requests[node_id][content_name] 
 							if len(self.active_requests[node_id])==0:
 								del self.active_requests[node_id]
+							del self.nodes[node_id].pending_table[content_name]
+							logging.debug(" Deleted content (%s) from PT"  % content_name)
 						except KeyError:
 							pass
+					# Case 2: node was a middle man
 					else:
-						self.nodes[node_id].outgoing_packet({ 'content_name': content_name, 'from_id':node_id,
-															 'content_data':self.nodes[node_id].content_store[content_name], 
-															 'dest_id':requester_id, '_type':'response', 'size':1},
-															 self.in_transit_packets)
-						logging.debug(" content %s already in cache", content_name) 
-						logging.debug(" sent content back to  %d ", requester_id)
-						
-				# Case 2: duplicate request exists
-				elif content_name in self.nodes[node_id].pending_table:   
-					self.nodes[node_id].pending_table[content_name] += [requester_id]
-					#logging.debug(" duplicate request for content %s , added requester_id %d to PT", packet[content_name], packet[requester_id]) 
-					logging.debug(" duplicate request for content , added requester_id to PT") 
-					#if (requester_id == 0):
-				  	#	self.active_requests[node_id] = {content_name:1}
-					
-				# Case 3: no pending request, but location lives in children, create entry in PT, send request to child
-				elif content_name in self.nodes[node_id].forwarding_table:
-					directed_child_id  = self.nodes[node_id].forwarding_table[content_name]   #direction of child where destination node is contained 
-					self.nodes[node_id].pending_table[content_name] = [requester_id]          # entry in PT created
-					self.nodes[node_id].outgoing_packet( {'content_name': content_name , 'dest_id':directed_child_id, 
-														  'from_id': node_id, '_type': 'request', 'size':1}, self.in_transit_packets)
-					logging.debug(" location content %s known, entry for requester %d created in PT", content_name, requester_id) 
-					logging.debug(" forwarded request to child %d ", directed_child_id )
-					#if (requester_id == 0):
-				  	#	self.active_requests[node_id] = {content_name:1}
+						print logging.debug("Forwarding response along to all requesters, I am: %d ... ", node_id)
+						for dest_id in self.nodes[node_id].pending_table[content_name]:
+							if dest_id == 0:
+								logging.debug(" DONE! I am a source: %d" % node_id)
+							else:
+								self.nodes[node_id].outgoing_packet({'content_name':packet['content_name'], 'from_id':node_id, 
+																	 'content_data':data, '_type':'response', 'dest_id':dest_id, 'size':1},
+																	self.in_transit_packets )
+								logging.debug("Sent response to requester %d ", dest_id)
+								logging.debug("Forwarding to all requesters complete")
 
-				# Case 4: no duplicate, add to PT, forward to parent 
-				else:
-					self.nodes[node_id].pending_table[content_name] = [requester_id]
-					parent_id = self.get_parent(node_id)
-					self.nodes[node_id].outgoing_packet({'content_name':content_name, 'from_id':node_id,
-														 'dest_id': parent_id, "_type": 'request', 'size':1 }, self.in_transit_packets)
-					logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request to parent %d", content_name, requester_id, parent_id) 
-				  	# IF this is the source then add to active_requests
-				  	if (requester_id == 0):
-				  		self.active_requests[node_id] = {content_name:1}
-
-
-
-			elif packet['_type'] == 'response':
-				# packet is a response
-				content_name = packet['content_name']
-				data = packet['content_data']    
-
-				# Case 1: node is source of request, 0 signifies it is the source of request
-				if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
-					logging.debug(" DONE! I am the source: %d" % node_id)
-					self.nodes[node_id].content_store[content_name] = data
-					logging.debug(" Added content (%s) to content store"  % content_name)
-					del self.nodes[node_id].pending_table[content_name]
-					logging.debug(" Deleted content (%s) from PT"  % content_name)
-					# Remove from the networks active requests monitor
-					try:
-						del self.active_requests[node_id][content_name] 
-						if len(self.active_requests[node_id])==0:
-							del self.active_requests[node_id]
 						del self.nodes[node_id].pending_table[content_name]
 						logging.debug(" Deleted content (%s) from PT"  % content_name)
-					except KeyError:
-						pass
-				# Case 2: node was a middle man
+						self.nodes[node_id].content_store[packet['content_name']] = data
+						logging.debug(" Added content (%s) to content store"  % content_name)
+
+					color_dict = self.get_color(node_id)
+					self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+					self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+
 				else:
-					print logging.debug("Forwarding response along to all requesters, I am: %d ... ", node_id)
-					for dest_id in self.nodes[node_id].pending_table[content_name]:
-						if dest_id == 0:
-							logging.debug(" DONE! I am a source: %d" % node_id)
-						else:
-							self.nodes[node_id].outgoing_packet({'content_name':packet['content_name'], 'from_id':node_id, 
-																 'content_data':data, '_type':'response', 'dest_id':dest_id, 'size':1},
-																self.in_transit_packets )
-							logging.debug("Sent response to requester %d ", dest_id)
-							logging.debug("Forwarding to all requesters complete")
-
-					del self.nodes[node_id].pending_table[content_name]
-					logging.debug(" Deleted content (%s) from PT"  % content_name)
-					self.nodes[node_id].content_store[packet['content_name']] = data
-					logging.debug(" Added content (%s) to content store"  % content_name)
-
-				color_dict = self.get_color(node_id)
-				self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-
-			else:
-				logging.warning(' Mislabeled Packet')
-				color_dict = self.get_color(node_id)
-				self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-
+					logging.warning(' Mislabeled Packet')
+					color_dict = self.get_color(node_id)
+					self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+					self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+			i += 1
 	
 	
 	def build(self, levels):
