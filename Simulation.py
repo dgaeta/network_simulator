@@ -250,9 +250,11 @@ class Network(object):
 
 	def redraw(self, ratio=1.2):
 		new_radius = 150 * 1.2
+		self.pause()
 		self.canvas.delete('all')
 		self._build(self.levels, 0, new_radius, 600, 540)
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
+		self.play()
 	
 	def _redraw(self, level,i,r,x,y):
 		""" Helper function for build() """
