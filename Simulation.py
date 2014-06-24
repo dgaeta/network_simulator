@@ -28,7 +28,20 @@ def is_empty( any_structure):
 			#print('Structure is empty.')
 			return True
 
-
+class AutoScrollbar(tk.Scrollbar):
+    # a scrollbar that hides itself if it's not needed.  only
+    # works if you use the grid geometry manager.
+    def set(self, lo, hi):
+        if float(lo) <= 0.0 and float(hi) >= 1.0:
+            # grid_remove is currently missing from Tkinter!
+            self.tk.call("grid", "remove", self)
+        else:
+            self.grid()
+        tk.Scrollbar.set(self, lo, hi)
+    def pack(self, **kw):
+        raise TclError, "cannot use pack with this widget"
+    def place(self, **kw):
+        raise TclError, "cannot use place with this widget"
 
 class Network(object):
 	def __init__(self, levels, master):
@@ -54,12 +67,35 @@ class Network(object):
 		
 		#### GUI for network sim 
 		self.root = master
-		
-		self.frame =  tk.Frame(self.root, width=800, height=800, bd=2, relief='sunken') # ADDED
-		self.frame.pack()
-		
-		self.canvas = tk.Canvas(self.root, height=800, width=1000)
-		self.canvas.pack()
+
+
+		vscrollbar = AutoScrollbar(self.root)
+		vscrollbar.grid(row=0, column=1, sticky='n'+'s')
+		hscrollbar = AutoScrollbar(self.root, orient='horizontal')
+		hscrollbar.grid(row=1, column=0, sticky='e'+'w')
+
+		#self.toolbar = tk.Frame(self.root)
+		#self.toolbar.pack()
+
+		self.canvas = tk.Canvas(self.root,
+                yscrollcommand=vscrollbar.set,
+                xscrollcommand=hscrollbar.set)
+		self.canvas.grid(row=0, column=0, sticky='n'+'s'+'e'+'w')
+
+		vscrollbar.config(command=self.canvas.yview)
+		hscrollbar.config(command=self.canvas.xview)
+
+		# make the canvas expandable
+		self.root.grid_rowconfigure(0, weight=1)
+		self.root.grid_columnconfigure(0, weight=1)
+
+
+		#
+		# create canvas contents
+		self.frame = tk.Frame(self.canvas)
+		self.frame.rowconfigure(1, weight=1)
+		self.frame.columnconfigure(1, weight=1)
+
 		
 		# Photo for heatmap
 		photo = tk.PhotoImage(file="heat1.gif")
@@ -81,9 +117,10 @@ class Network(object):
 		#### Enqueue the build into the mainloop
 		self.root.after(0, self.build(levels))
 		self.root.after_idle(self.assemble_regions)
-		####
-		
-		
+
+
+
+		####	
 		#### Create a button to close the program
 
 		
@@ -194,7 +231,10 @@ class Network(object):
 		#elf.button.pack(side='left')
 
 		 ####
-		self.canvas.update()
+		self.canvas.create_window(0, 0, anchor='nw', window=self.frame)
+		self.frame.update_idletasks()
+		self.canvas.config(scrollregion=self.canvas.bbox("all"))
+		#self.canvas.update()
 		self.root.after(1, self.animation)
 		self.root.mainloop()
 		####
@@ -732,7 +772,7 @@ class Network(object):
 	
 	
 	def build(self, levels):
-		self._build(levels, 0, 110, 550, 345)
+		self._build(levels, 0, 150, 550, 540)
 	
 	def _build(self, level,i,r,x,y):
 		""" Helper function for build() """
