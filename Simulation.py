@@ -230,6 +230,9 @@ class Network(object):
 		self.b = tk.Button(self.frame, text="Regions", width=10, command=lambda: self.test_regions())
 		self.b.pack()
 
+		self.b = tk.Button(self.frame, text="zoom", width=10, command=lambda: self.redraw())
+		self.b.pack()
+
 		#self.button = tk.Button(
 		#	self.frame, text="Flood", fg="red", command=lambda: self.aim()
 		#	)
@@ -243,6 +246,111 @@ class Network(object):
 		self.root.after(1, self.animation)
 		self.root.mainloop()
 		####
+
+
+	def redraw(self, ratio=1.2):
+		new_radius = 150 * 1.2
+		self.canvas.delete('all')
+		self._build(self.levels, 0, new_radius, 600, 540)
+		self.canvas.config(scrollregion=self.canvas.bbox("all"))
+	
+	def _redraw(self, level,i,r,x,y):
+		""" Helper function for build() """
+		#center = 7i+1
+		#north = 7i+2
+		#south = 7i+3
+		#northaast = 7i+4
+		#southeast = 7i+5
+		#northwest = 7i+6
+		#southwest = 7i+7
+	
+	  
+		if level > 0:
+
+			#center
+			color_width = self.get_color(7*i+1)
+			canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+1))
+			self.nodes[7*i+1].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+1,r/3,x,(y)))
+
+			#north
+			color_width = self.get_color(7*i+2)
+			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+2))
+			self.nodes[7*i+2].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+2,r/3,x,(y-(2.0*r))))
+
+			#south
+			color_width = self.get_color(7*i+3)
+			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+3))
+			self.nodes[7*i+3].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+3,r/3,x,(y+(2.0*r))))
+
+			#northeast
+			color_width = self.get_color(7*i+4)
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+4))            
+			self.nodes[7*i+4].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+4,r/3,x+2*r*math.sqrt(3)/2,(y-r)))
+
+			#southeast
+			color_width = self.get_color(7*i+5)
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+5))
+			self.nodes[7*i+5].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+5,r/3,x+2*r*math.sqrt(3)/2,(y+r)))
+
+			#northwest
+			color_width = self.get_color(7*i+6)
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+6))
+			self.nodes[7*i+6].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+6,r/3,x-2*r*math.sqrt(3)/2,(y-r)))
+
+			#southwest
+			color_width = self.get_color(7*i+7)
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+7))
+			self.nodes[7*i+7].canvas_id = canvas_id
+			self.root.after(0, self._build(level-1,7*i+7,r/3,x-2*r*math.sqrt(3)/2,(y+r)))
+					
+		else:
+			if level == 0:
+				#center
+				color_width = self.get_color(7*i+1)
+				canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+1))
+				self.nodes[7*i+1].canvas_id = canvas_id
+				
+				
+				#north
+				color_width = self.get_color(7*i+2)
+				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+2))
+				self.nodes[7*i+2].canvas_id = canvas_id
+			   
+				#south
+				color_width = self.get_color(7*i+3)
+				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+3))
+				self.nodes[7*i+3].canvas_id = canvas_id
+
+				#northeast
+				color_width = self.get_color(7*i+4)
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+4))            
+				self.nodes[7*i+4].canvas_id = canvas_id
+			
+				   
+				#southeast
+				color_width = self.get_color(7*i+5)
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+5))
+				self.nodes[7*i+5].canvas_id = canvas_id
+				
+  
+				#northwest
+				color_width = self.get_color(7*i+6)
+				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+6))
+				self.nodes[7*i+6].canvas_id = canvas_id
+				
+
+				#southwest
+				color_width = self.get_color(7*i+7)
+				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+7))
+				self.nodes[7*i+7].canvas_id = canvas_id
+				
+
 
 
 	def test_regions(self):
