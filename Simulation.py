@@ -68,40 +68,45 @@ class Network(object):
 		#### GUI for network sim 
 		self.root = master
 
-
+		# Give the window scrolls
 		vscrollbar = AutoScrollbar(self.root)
 		vscrollbar.grid(row=0, column=1, sticky='n'+'s')
 		hscrollbar = AutoScrollbar(self.root, orient='horizontal')
-		hscrollbar.grid(row=1, column=0, sticky='e'+'w')
+		hscrollbar.grid(row=2, column=0, sticky='e'+'w')
+
+		
 
 		#self.toolbar = tk.Frame(self.root)
 		#self.toolbar.pack()
 
-		self.canvas = tk.Canvas(self.root,
+		self.frame = tk.Frame(self.root, height=600,width=600, relief='raised', bd=2)
+		self.frame.grid(row=0,column=0)
+		self.frame.grid_rowconfigure(0, weight=0, minsize=600)
+		self.frame.grid_columnconfigure(0, weight=1, minsize=200)
+
+
+
+		self.canvas = tk.Canvas(self.root,width=600,height=600,
                 yscrollcommand=vscrollbar.set,
                 xscrollcommand=hscrollbar.set)
-		self.canvas.grid(row=0, column=0, sticky='n'+'s'+'e'+'w')
+		self.canvas.grid(row=1, column=0, sticky='n'+'s'+'e'+'w')
 
 		vscrollbar.config(command=self.canvas.yview)
 		hscrollbar.config(command=self.canvas.xview)
 
+		
+		# make the frame not expandable
+		self.root.grid_rowconfigure(0, weight=0, minsize=150)
+		self.root.grid_columnconfigure(0, weight=0, minsize=600)
 		# make the canvas expandable
-		self.root.grid_rowconfigure(0, weight=1)
-		self.root.grid_columnconfigure(0, weight=1)
-
-
-		#
-		# create canvas contents
-		self.frame = tk.Frame(self.canvas)
-		self.frame.rowconfigure(1, weight=1)
-		self.frame.columnconfigure(1, weight=1)
-
+		self.root.grid_rowconfigure(1, weight=1, minsize=150)
+		self.root.grid_columnconfigure(0, weight=1, minsize=600)
 		
 		# Photo for heatmap
 		photo = tk.PhotoImage(file="heat1.gif")
 		self.label = tk.Label(self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
 		self.label.photo = photo
-		self.label.pack(side='left')
+		self.label.pack(side='bottom')
 		####		
 		
 		self.delay_scale = tk.Scale(self.frame, from_=0, to=5, orient='horizontal', command=self.update_delay, label='Sim Delay',
@@ -231,7 +236,7 @@ class Network(object):
 		#elf.button.pack(side='left')
 
 		 ####
-		self.canvas.create_window(0, 0, anchor='nw', window=self.frame)
+		#self.canvas.create_window(0, 0, anchor='nw', window=self.frame)
 		self.frame.update_idletasks()
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
 		#self.canvas.update()
@@ -772,7 +777,7 @@ class Network(object):
 	
 	
 	def build(self, levels):
-		self._build(levels, 0, 150, 550, 540)
+		self._build(levels, 0, 150, 600, 540)
 	
 	def _build(self, level,i,r,x,y):
 		""" Helper function for build() """
