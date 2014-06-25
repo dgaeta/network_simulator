@@ -79,17 +79,17 @@ class Network(object):
 		#self.toolbar = tk.Frame(self.root)
 		#self.toolbar.pack()
 
-		self.frame = tk.Frame(self.root, height=600,width=600, relief='raised', bd=2)
-		self.frame.grid(row=0,column=0)
+		self.frame = tk.Frame(self.root, height=600,width=800, relief='raised', bd=2)
+		self.frame.grid(row=0,column=0, sticky='w'+'e')
 		self.frame.grid_rowconfigure(0, weight=0, minsize=600)
-		self.frame.grid_columnconfigure(0, weight=1, minsize=200)
+		self.frame.grid_columnconfigure(0, weight=1, minsize=800)
 
 
 
-		self.canvas = tk.Canvas(self.root,width=600,height=600,
+		self.canvas = tk.Canvas(self.root,width=825,height=600,
                 yscrollcommand=vscrollbar.set,
                 xscrollcommand=hscrollbar.set)
-		self.canvas.grid(row=1, column=0, sticky='n'+'s'+'e'+'w')
+		self.canvas.grid(row=1, column=0 )
 
 		vscrollbar.config(command=self.canvas.yview)
 		hscrollbar.config(command=self.canvas.xview)
@@ -102,19 +102,27 @@ class Network(object):
 		self.root.grid_rowconfigure(1, weight=1, minsize=150)
 		self.root.grid_columnconfigure(0, weight=1, minsize=600)
 		
+
+
 		# Photo for heatmap
 		photo = tk.PhotoImage(file="heat1.gif")
 		self.label = tk.Label(self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
 		self.label.photo = photo
 		self.label.pack(side='bottom')
-		####		
+		####	
+
+		self.simulation_state = tk.Label(
+			self.frame, textvariable=self.button_pressed
+			)
+		self.simulation_state.pack(side='bottom')
+
 		
-		self.delay_scale = tk.Scale(self.frame, from_=0, to=5, orient='horizontal', command=self.update_delay, label='Sim Delay',
+		self.delay_scale = tk.Scale(self.frame, from_=0, to=5, orient='horizontal', command=self.update_delay, label='Animation Delay', length=108
 			)
 		self.delay_scale.set(0)
-		self.delay_scale.pack(side='left')
+		self.delay_scale.pack(side='left', anchor='w')
 
-		self.request_freq = tk.Scale(self.frame, from_=0, to=100, orient='horizontal', command=self.reload, label='Request Freq Per Node', length=200
+		self.request_freq = tk.Scale(self.frame, from_=0, to=100, orient='horizontal', command=self.reload, label='Network Activity', length=108
 			)
 		self.request_freq.set(0)
 		self.request_freq.pack(side='left')
@@ -175,10 +183,10 @@ class Network(object):
 		
 		
 		
-		self.button = tk.Button(
-			self.frame, text="Publish Content", fg="red", command=lambda: self.prepare()
-			)
-		self.button.pack(side='left')
+		#self.button = tk.Button(
+		#	self.frame, text="Publish Content", fg="red", command=lambda: self.prepare()
+		#	)
+		#self.button.pack(side='left')
 
 		#self.button = tk.Button(
 		#	self.frame, text="Initiate", fg="red", command=lambda: self.initiate()
@@ -191,47 +199,43 @@ class Network(object):
 		#self.button.pack(side='left')
 
 		self.button = tk.Button(
-			self.frame, text="Play", fg="red", command=lambda: self.play()
+			self.frame, text="PLAY", fg="red", command=lambda: self.play()
 			)
-		self.button.pack(side='left')
+		self.button.pack(side='left', padx=17)
 
 		self.button = tk.Button(
-			self.frame, text="Pause", fg="red", command=lambda: self.pause()
+			self.frame, text="PAUSE", fg="red", command=lambda: self.pause()
 			)
-		self.button.pack(side='left')
+		self.button.pack(side='left',padx=17)
 		####
 
 		#self.set_buttons()
 		self.button = tk.Button(
 			self.frame, text="QUIT", fg="red", command=lambda: self.quit()
 			)
-		self.button.pack(side='left')
+		self.button.pack(side='left',padx=17)
 
 
 		#self.set_buttons()
-		self.button = tk.Button(
-			self.frame, text="DDoS", fg="red", command=lambda: self.DDoS()
-			)
-		self.button.pack(side='left')
-
-
-		self.pressed_label = tk.Label(
-			self.frame, textvariable=self.button_pressed
-			)
-		self.pressed_label.pack(side='right')
-
+		self.zoom_button = tk.Button(
+			self.frame, text="ZOOM", command=lambda: self.redraw())
+		self.zoom_button.pack(side='left',padx=17)
 
 		self.entry1 = tk.Entry(self.frame, textvariable=self.entry_value)
 		self.entry1.pack()
 
-		self.b = tk.Button(self.frame, text="Highlight", width=10, command=lambda: self.highlight())
-		self.b.pack()
+		self.highlight_button = tk.Button(self.frame, text="Highlight", width=10, command=lambda: self.highlight())
+		self.highlight_button.pack()
 
-		self.b = tk.Button(self.frame, text="Regions", width=10, command=lambda: self.test_regions())
-		self.b.pack()
+		self.regions_button = tk.Button(self.frame, text="Show Regions", width=10, command=lambda: self.test_regions())
+		self.regions_button.pack()
 
-		self.b = tk.Button(self.frame, text="zoom", width=10, command=lambda: self.redraw())
-		self.b.pack()
+		self.button = tk.Button(
+			self.frame, text="DDoS", fg="red", width=10, command=lambda: self.DDoS()
+			)
+		self.button.pack()
+
+		
 
 		#self.button = tk.Button(
 		#	self.frame, text="Flood", fg="red", command=lambda: self.aim()
@@ -243,7 +247,8 @@ class Network(object):
 		self.frame.update_idletasks()
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
 		#self.canvas.update()
-		self.root.after(1, self.animation)
+		self.root.after_idle(self.prepare)
+		self.root.after(2000, self.animation)
 		self.root.mainloop()
 		####
 
@@ -433,7 +438,7 @@ class Network(object):
 
 
 	def pressed(self, button):
-		self.button_pressed.set(str(button))
+		self.simulation_state.set(str(button))
 		self.frame.update()
 
 
@@ -507,7 +512,8 @@ class Network(object):
 			self.content_names.append(content_name)
 			c +=1
 			leaf_id -= 5
-		logging.debug('  Publishing complete. avail content_names are : %s ', str(self.content_names))
+		logging.debug('  Publishing complete. avail content_names are %d through %d ', int(self.content_names[0]), 
+			int(self.content_names[(len(self.content_names) -1)]))
 		self.button_pressed.set("PLAYING")
 		self.frame.update()
 				
@@ -972,5 +978,6 @@ class Network(object):
 			
 				
 root = tk.Tk()
+root.wm_title("Name Based Routing Simulation")
 Network(3, root) 
 root.mainloop()
