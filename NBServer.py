@@ -11,6 +11,7 @@ class NBServer:
     self.forwarding_table = {}
     self.content_store = {}
     self.pending_table = {}
+    self.total_load = 0
 
   def __str__(self):
     string = 'current load: ' + str(self.req_load + self.res_load) 

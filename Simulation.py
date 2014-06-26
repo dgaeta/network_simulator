@@ -5,6 +5,7 @@ import logging
 import Servers 
 import random
 import sys
+from Utilities import *
 
 logging.getLogger().setLevel(logging.DEBUG)
 
@@ -15,33 +16,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 # implement the default mpl key bindings
 from matplotlib.backend_bases import key_press_handler
 
-def _create_circle(self, x, y, r, **kwargs):
-	"""implementation for creating a circle in Tk"""
-	return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
-tk.Canvas.create_circle = _create_circle
-
-def is_empty( any_structure):
-		if any_structure:
-			#print('Structure is not empty.')
-			return False
-		else:
-			#print('Structure is empty.')
-			return True
-
-class AutoScrollbar(tk.Scrollbar):
-    # a scrollbar that hides itself if it's not needed.  only
-    # works if you use the grid geometry manager.
-    def set(self, lo, hi):
-        if float(lo) <= 0.0 and float(hi) >= 1.0:
-            # grid_remove is currently missing from Tkinter!
-            self.tk.call("grid", "remove", self)
-        else:
-            self.grid()
-        tk.Scrollbar.set(self, lo, hi)
-    def pack(self, **kw):
-        raise TclError, "cannot use pack with this widget"
-    def place(self, **kw):
-        raise TclError, "cannot use place with this widget"
 
 class Network(object):
 	def __init__(self, levels, master):
@@ -58,10 +32,12 @@ class Network(object):
 		self.flag = True
 		self.delay = 500
 		self.ammo = 0 
-		self.button_pressed = tk.StringVar()
-		self.button_pressed.set("To Start, Click 'Publish Content'")
+		self.simulation_state = tk.StringVar()
+		self.simulation_state.set('PLAYING')
 		self.regions = []
-		self.entry_value = tk.StringVar()
+		self.highlight_entry = tk.StringVar()
+		self.radius = 150
+		self.zoom_level = 0
 		####
 		
 		
@@ -70,195 +46,145 @@ class Network(object):
 
 		# Give the window scrolls
 		vscrollbar = AutoScrollbar(self.root)
-		vscrollbar.grid(row=0, column=1, sticky='n'+'s')
+		vscrollbar.grid(row=0, column=3, sticky='n'+'s')
 		hscrollbar = AutoScrollbar(self.root, orient='horizontal')
 		hscrollbar.grid(row=2, column=0, sticky='e'+'w')
 
-		
-
-		#self.toolbar = tk.Frame(self.root)
-		#self.toolbar.pack()
-
-		self.frame = tk.Frame(self.root, height=600,width=800, relief='raised', bd=2)
-		self.frame.grid(row=0,column=0, sticky='w'+'e')
-		self.frame.grid_rowconfigure(0, weight=0, minsize=600)
-		self.frame.grid_columnconfigure(0, weight=1, minsize=800)
-
-
+		self.frame = tk.Frame(self.root, height=600,width=900, relief='raised', bd=2)
+		self.frame.grid(row=0,column=0)
+		self.frame.grid_rowconfigure(0, weight=0)
+		self.frame.grid_columnconfigure(0, weight=1)
 
 		self.canvas = tk.Canvas(self.root,width=825,height=600,
                 yscrollcommand=vscrollbar.set,
                 xscrollcommand=hscrollbar.set)
-		self.canvas.grid(row=1, column=0 )
+		self.canvas.grid(row=1, column=0, sticky='e'+'w'+'n'+'s' )
+		self.canvas.grid_columnconfigure(0, weight=1)
+		self.canvas.grid_rowconfigure(1, weight=1)
 
 		vscrollbar.config(command=self.canvas.yview)
 		hscrollbar.config(command=self.canvas.xview)
 
-		
 		# make the frame not expandable
 		self.root.grid_rowconfigure(0, weight=0, minsize=150)
-		self.root.grid_columnconfigure(0, weight=0, minsize=600)
+		self.root.grid_columnconfigure(0, weight=0, minsize=700)
 		# make the canvas expandable
 		self.root.grid_rowconfigure(1, weight=1, minsize=150)
-		self.root.grid_columnconfigure(0, weight=1, minsize=600)
+		self.root.grid_columnconfigure(0, weight=1, minsize=700)
 		
 
-
-		# Photo for heatmap
+		# heatmap image 
 		photo = tk.PhotoImage(file="heat1.gif")
-		self.label = tk.Label(self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
+		self.label = tk.Label(
+			self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
 		self.label.photo = photo
-		self.label.pack(side='bottom')
-		####	
+		self.label.grid(row=3,column=1, columnspan=4,padx=20)
 
-		self.simulation_state = tk.Label(
-			self.frame, textvariable=self.button_pressed
+		# label for simulatoin state
+		self.simulation_state_label = tk.Label(
+			self.frame, textvariable=self.simulation_state
 			)
-		self.simulation_state.pack(side='bottom')
+		self.simulation_state_label.grid(row=2,column=1)
 
-		
-		self.delay_scale = tk.Scale(self.frame, from_=0, to=5, orient='horizontal', command=self.update_delay, label='Animation Delay', length=108
+		# delay in seconds of animation
+		self.delay_scale = tk.Scale(
+			self.frame, from_=0, to=5, orient='horizontal', command=self.update_delay, label='Animation Delay', length=150
 			)
-		self.delay_scale.set(0)
-		self.delay_scale.pack(side='left', anchor='w')
+		self.delay_scale.set(5)
+		self.delay_scale.grid(row=0,column=0)
 
-		self.request_freq = tk.Scale(self.frame, from_=0, to=100, orient='horizontal', command=self.reload, label='Network Activity', length=108
+		# Degree of stress on network nodes
+		self.request_freq = tk.Scale(
+			self.frame, from_=0, to=100, orient='horizontal', command=self.reload, label='Network Activity', length=150
 			)
-		self.request_freq.set(0)
-		self.request_freq.pack(side='left')
-		
-		#### Enqueue the build into the mainloop
-		self.root.after(0, self.build(levels))
-		self.root.after_idle(self.assemble_regions)
-
-
-
-		####	
-		#### Create a button to close the program
-
-		
-		
-		# Create a button to publish the data
-		#self.button = tk.Button(
-		#	self.frame, text="Publish", fg="red", command=lambda: self.publish_content('ok','ok',686)
-		#	)
-		#self.button.pack(side='left')
-		
-		# Button for testing numbers
-		#self.button = tk.Button(
-		 #   self.frame, text="test num", fg="red", command=lambda: self.test_nums()
-		  #  )
-		#self.button.pack(side='left')
-		
-		# Button for intiating request
-		#self.button = tk.Button(
-		#	self.frame, text="Make Request", fg="red", command=lambda: self.begin_initial_request('ok', 444)
-		#	)
-		#self.button.pack(side='left')
-		
-		# Button for stepping through simulation
-		#self.button = tk.Button(
-		#	self.frame, text="Process", fg="red", command=lambda: self.step()
-		#	)
-		#self.button.pack(side='left')
-		
-		#
-		#self.button = tk.Button(
-		#	self.frame, text="Deliver", fg="red", command=lambda: self.deliver_in_transit_packets()
-		#	)
-		#self.button.pack(side='left')
-		
-		
-		# Button displaying original requests still waiting 
-		#self.button = tk.Button(
-		#	self.frame, text="Status", fg="red", command=lambda: self.status()
-		#	)
-		#self.button.pack(side='left')
-		
-		#
-		#self.button = tk.Button(
-		#	self.frame, text="Run", fg="red", command=lambda: self.simulation()
-		#	)
-		#self.button.pack(side='left')
-		
-		
-		
-		#self.button = tk.Button(
-		#	self.frame, text="Publish Content", fg="red", command=lambda: self.prepare()
-		#	)
-		#self.button.pack(side='left')
-
-		#self.button = tk.Button(
-		#	self.frame, text="Initiate", fg="red", command=lambda: self.initiate()
-		#	)
-		#self.button.pack(side='left')
-
-		#self.button = tk.Button(
-		#	self.frame, text="In transit", fg="red", command=lambda: self.in_transit()
-		#	)
-		#self.button.pack(side='left')
+		self.request_freq.set(30)
+		self.request_freq.grid(row=1,column=0)
 
 		self.button = tk.Button(
 			self.frame, text="PLAY", fg="red", command=lambda: self.play()
 			)
-		self.button.pack(side='left', padx=17)
+		self.button.grid(row=0,column=1)
 
 		self.button = tk.Button(
 			self.frame, text="PAUSE", fg="red", command=lambda: self.pause()
 			)
-		self.button.pack(side='left',padx=17)
-		####
+		self.button.grid(row=0,column=2)		####
 
 		#self.set_buttons()
 		self.button = tk.Button(
 			self.frame, text="QUIT", fg="red", command=lambda: self.quit()
 			)
-		self.button.pack(side='left',padx=17)
+		self.button.grid(row=0,column=3)
 
-
-		#self.set_buttons()
+		# zoom in
 		self.zoom_button = tk.Button(
-			self.frame, text="ZOOM", command=lambda: self.redraw())
-		self.zoom_button.pack(side='left',padx=17)
+			self.frame, text="ZOOM +", command=lambda: self.redraw('in'))
+		self.zoom_button.grid(row=0,column=4, sticky='n')
 
-		self.entry1 = tk.Entry(self.frame, textvariable=self.entry_value)
-		self.entry1.pack()
+		# zoom out 
+		self.zoom_button = tk.Button(
+			self.frame, text="ZOOM -", command=lambda: self.redraw('out'))
+		self.zoom_button.grid(row=0,column=4, sticky='s')
+		
+		self.entry1 = tk.Entry(
+			self.frame, textvariable=self.highlight_entry)
+		self.entry1.insert(0, "enter node number")
+		self.entry1.grid(row=0,column=5, sticky='n')
 
-		self.highlight_button = tk.Button(self.frame, text="Highlight", width=10, command=lambda: self.highlight())
-		self.highlight_button.pack()
+		self.highlight_button = tk.Button(
+			self.frame, text="Highlight Node", width=10, command=lambda: self.highlight())
+		self.highlight_button.grid(row=0,column=5,sticky='s')
 
-		self.regions_button = tk.Button(self.frame, text="Show Regions", width=10, command=lambda: self.test_regions())
-		self.regions_button.pack()
+		self.regions_button = tk.Button(
+			self.frame, text="Show Region", width=10, command=lambda: self.illustrate_regions())
+		self.regions_button.grid(row=1,column=5, sticky='n')
+
+		self.regions_button = tk.Button(
+			self.frame, text="Show Publish", width=10, command=lambda: self.illustrate_publish())
+		self.regions_button.grid(row=1,column=5, sticky='s')
+
+		self.regions_button = tk.Button(
+			self.frame, text="Show Request", width=10, command=lambda: self.illustrate_request())
+		self.regions_button.grid(row=1,column=5, sticky='n')
 
 		self.button = tk.Button(
 			self.frame, text="DDoS", fg="red", width=10, command=lambda: self.DDoS()
 			)
-		self.button.pack()
+		self.button.grid(row=2,column=5, sticky='s')
 
-		
 
-		#self.button = tk.Button(
-		#	self.frame, text="Flood", fg="red", command=lambda: self.aim()
-		#	)
-		#elf.button.pack(side='left')
 
-		 ####
-		#self.canvas.create_window(0, 0, anchor='nw', window=self.frame)
+
+
+		## Enqueue the build into the mainloop
+		self.root.after(0, self.build(levels))
+		##
+		self.root.after_idle(self.assemble_regions)	
+
 		self.frame.update_idletasks()
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
-		#self.canvas.update()
 		self.root.after_idle(self.prepare)
-		self.root.after(2000, self.animation)
+		self.root.after_idle(self.animation)
 		self.root.mainloop()
 		####
 
 
-	def redraw(self, ratio=1.2):
-		new_radius = 150 * 1.2
+	
+	def redraw(self, method):
+		if method == 'in':
+			self.radius *= 1.2
+			self.zoom_level += 1
+		else:
+			self.radius *= .8
+			self.zoom_level -= 1
 		self.pause()
 		self.canvas.delete('all')
-		self._build(self.levels, 0, new_radius, 600, 540)
+		self._redraw(self.levels, 0, self.radius, 600, 540)
+		bounds = self.canvas.bbox('all')  # returns a tuple like (x1, y1, x2, y2)
+		width = bounds[2] - bounds[0]
+		height = bounds[3] - bounds[1]
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
+		self.canvas.update()
 		self.play()
 	
 	def _redraw(self, level,i,r,x,y):
@@ -276,43 +202,43 @@ class Network(object):
 
 			#center
 			color_width = self.get_color(7*i+1)
-			canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+1))
+			canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+1].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+1,r/3,x,(y)))
 
 			#north
 			color_width = self.get_color(7*i+2)
-			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+2))
+			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+2].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+2,r/3,x,(y-(2.0*r))))
 
 			#south
 			color_width = self.get_color(7*i+3)
-			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+3))
+			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+3].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+3,r/3,x,(y+(2.0*r))))
 
 			#northeast
 			color_width = self.get_color(7*i+4)
-			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+4))            
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'])            
 			self.nodes[7*i+4].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+4,r/3,x+2*r*math.sqrt(3)/2,(y-r)))
 
 			#southeast
 			color_width = self.get_color(7*i+5)
-			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+5))
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+5].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+5,r/3,x+2*r*math.sqrt(3)/2,(y+r)))
 
 			#northwest
 			color_width = self.get_color(7*i+6)
-			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+6))
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+6].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+6,r/3,x-2*r*math.sqrt(3)/2,(y-r)))
 
 			#southwest
 			color_width = self.get_color(7*i+7)
-			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+7))
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'])
 			self.nodes[7*i+7].canvas_id = canvas_id
 			self.root.after(0, self._build(level-1,7*i+7,r/3,x-2*r*math.sqrt(3)/2,(y+r)))
 					
@@ -320,44 +246,65 @@ class Network(object):
 			if level == 0:
 				#center
 				color_width = self.get_color(7*i+1)
-				canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+1))
+				canvas_id = self.canvas.create_circle(x, y , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+1].canvas_id = canvas_id
 				
 				
 				#north
 				color_width = self.get_color(7*i+2)
-				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+2))
+				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+2].canvas_id = canvas_id
 			   
 				#south
 				color_width = self.get_color(7*i+3)
-				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+3))
+				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+3].canvas_id = canvas_id
 
 				#northeast
 				color_width = self.get_color(7*i+4)
-				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+4))            
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = color_width['color'], width = color_width['width'])            
 				self.nodes[7*i+4].canvas_id = canvas_id
 			
 				   
 				#southeast
 				color_width = self.get_color(7*i+5)
-				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+5))
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+5].canvas_id = canvas_id
 				
   
 				#northwest
 				color_width = self.get_color(7*i+6)
-				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+6))
+				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+6].canvas_id = canvas_id
 				
 
 				#southwest
 				color_width = self.get_color(7*i+7)
-				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'], tags=str(7*i+7))
+				canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = color_width['color'], width = color_width['width'])
 				self.nodes[7*i+7].canvas_id = canvas_id
 				
 
+	def illustrate_regions(self):
+		region = self.regions[11]
+
+		self.canvas.itemconfig(self.nodes[region[0]].canvas_id, outline='purple', width=2.0)
+		self.canvas.itemconfig(self.nodes[self.get_actual_node(region[0])].canvas_id, outline='purple', width=2.0)
+		self.canvas.update_idletasks()
+		sleep(2)
+		self.canvas.itemconfig(self.nodes[region[0]].canvas_id, outline='grey', width=1.0)
+		self.canvas.itemconfig(self.nodes[self.get_actual_node(region[0])].canvas_id, outline='grey', width=1.0)
+		self.canvas.update_idletasks()
+		
+
+		for i in range(1,7):
+				self.canvas.itemconfig(self.nodes[region[i]].canvas_id, outline='purple', width=2.0)
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(region[i])].canvas_id, outline='purple', width=2.0)
+				self.canvas.update_idletasks()
+		sleep(2)
+		for i in range(1,7):
+				self.canvas.itemconfig(self.nodes[region[i]].canvas_id, outline='grey', width=1.0)
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(region[i])].canvas_id, outline='grey', width=1.0)
+				self.canvas.update_idletasks()
 
 
 	def test_regions(self):
@@ -376,8 +323,8 @@ class Network(object):
 
 	def highlight(self):
 		""" Used for highlighting a single node """
-		node_id = int(self.entry_value.get())
-		self.entry_value.set(node_id)
+		node_id = int(self.highlight_entry.get())
+		self.highlight_entry.set(node_id)
 		print node_id
 		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='purple', width=2.0)
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='purple', width=2.0)
@@ -406,24 +353,29 @@ class Network(object):
 		self.canvas.update()
 
 	def DDoS(self):
-		DDoS_region = random.randint(0,len(self.regions)-1)
+		DDoS_region = self.regions[random.randint(0,len(self.regions)-1)]
 		content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
 		self._DDoS(DDoS_region, content_name, self.ammo)
-		self.root.after(10000, self.DDoS_follow_up, DDoS_region, content_name)
+		#self.root.after(10000, self.DDoS_follow_up, DDoS_region, content_name)
 		
 
-	def _DDoS(self, region_id,content_name, size ):
+	def _DDoS(self, region_nodes,content_name, size ):
 		#i = 0 
-		#while i < size:
-		node_id = self.regions[region_id][random.randint(1,6)]
+		node_id = region_nodes[random.randint(1,6)]
+		#print node_id
 		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':0, '_type': 'request', 'size': 1})
 		color_dict = self.get_color(node_id)
 		canvas_id = self.nodes[node_id].canvas_id
-		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
+		try:
+			self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
+		except TypeError:
+			self.pause()
+			print node_id
+			print str(color_dict)
 		#self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 			#i += 1
-		self.canvas.update()
-		self.root.after(1, self._DDoS, region_id, content_name, size)
+		self.canvas.update_idletasks()
+		self.root.after(1, self._DDoS, region_nodes, content_name, size)
 
 	def DDoS_follow_up(self, DDoS_region, content_name):
 		#selectable_regions = range(0,DDoS_region) + range(DDoS_region+1,len(self.regions))
@@ -434,8 +386,6 @@ class Network(object):
 		color_dict = self.get_color(node_id)
 		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 		
-
-
 
 	def pressed(self, button):
 		self.simulation_state.set(str(button))
@@ -452,27 +402,25 @@ class Network(object):
 		#print self.delay
 
 	def play(self):
-		self.flag = True
-		self.root.after_idle(self.animation)
+		self.root.after(self.delay,self.animation)
 		logging.debug(' Pressed: PLAY')
-		self.button_pressed.set('PLAYING')
-		self.frame.update()
+		self.simulation_state.set('PLAYING')
+		#self.frame.update_idletasks()
 
 
 	def pause(self):
-		self.flag = False
+
 		logging.debug(' Pressed: PAUSE')
-		self.button_pressed.set('PAUSED')
-		self.frame.update()
+		self.simulation_state.set('PAUSED')
+		#self.frame.update_idletasks()
 
 
 	def animation(self):
-		if self.flag:
+		if self.simulation_state.get() == 'PLAYING':
 			self.root.after_idle(self.draw)
-			delay = self.delay
 			self.step()  # Does a process and deliver
 			self.deliver_in_transit_packets()
-			self.root.after(delay,self.animation)
+			self.root.after(self.delay,self.animation)
 
 			#self.root.after(delay,self.aim)
 		
@@ -486,6 +434,7 @@ class Network(object):
 		
 		 
 	def quit(self):
+		self.flag = False
 		self.end_program
 		sys.exit()
 		
@@ -503,34 +452,73 @@ class Network(object):
 			self.canvas.update_idletasks()
 			
 	def prepare(self):
-		c = 10000
+		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
 		leaf_id = 2800
-		while (leaf_id > 400 and self.flag):
-			content_name = str(c)
+		while (leaf_id > 450 and self.flag):
+			content_name = str(content_index)
 			self.publish_content(content_name, content_name, leaf_id)
 			self.content_names.append(content_name)
-			c +=1
+			content_index +=1
 			leaf_id -= 5
 		logging.debug('  Publishing complete. avail content_names are %d through %d ', int(self.content_names[0]), 
 			int(self.content_names[(len(self.content_names) -1)]))
-		self.button_pressed.set("PLAYING")
-		self.frame.update()
+		self.simulation_state.set("PLAYING")
+		self.frame.update_idletasks()
 				
+
+	def publish_content( self,content_name, content_data, source_id):
+		self.nodes[source_id].content_store[content_name] =  content_data
+		
+		# Update all parents hash of source node until reaching root 1
+		current = source_id
+		parent_id = self.get_parent(source_id)
+		while ( parent_id != 0 ):    # get_parent of 1 always returns 0
+			self.nodes[parent_id].forwarding_table[content_name] = current
+			current = parent_id
+			parent_id = self.get_parent(parent_id)
+		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
+
 			
-	def initiate(self):
-		node_id = self.upper_lim
-		count = 0
-		while node_id > 400:  ## HARD CODED; currently initiating 40% of network
-			content_name = self.content_names[random.randint(0,(len(self.content_names)-1))]
-			#self.nodes[node_id].incoming.append({'content_name': content_name, 'from_id':0, '_type': 'request' })  # 0 signifies that it is the source of request
-			self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':0, '_type': 'request', 'size':1 })
-			self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='blue', width=2.0)
-			#self.active_requests[node_id] = {content_name:1} #1 is a dummy holder
-			node_id -= 110
-		self.canvas.update_idletasks()
-		logging.debug('  Simulation ready')
-		#self.step()
+	def illustrate_publish(self):
+		source_id = 1000
+		content_name = 'espn.com/usa-world-cup-winner'
+		if self.delay > 500:
+			self.canvas.itemconfig(self.nodes[source_id].canvas_id, outline='purple', width=2.0)
+			self.canvas.update()
+			sleep(self.delay/1000)
+			self.canvas.itemconfig(self.nodes[source_id].canvas_id, outline='grey', width=1.0)
+			self.canvas.update()
+		
+		# Get all parents of source node until reaching root 1
+		current = source_id
+		parent_id = self.get_parent(source_id)
+		while ( parent_id != 0 ):    # parent of 1 always returns 0
+			self.nodes[parent_id].forwarding_table[content_name] = current
+			if self.delay > 500:
+				self.canvas.itemconfig(self.nodes[parent_id].canvas_id, outline='purple', width=2.0)
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(parent_id)].canvas_id, outline='purple', width=2.0)
+				self.canvas.update()
+				sleep(self.delay/1000)
+				self.canvas.itemconfig(self.nodes[parent_id].canvas_id, outline='grey', width=1.0)
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(parent_id)].canvas_id, outline='grey', width=1.0)
+				self.canvas.update()
+			
+			current = parent_id
+			parent_id = self.get_parent(parent_id)
+		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
+
+		pass
+
+	def illustrate_request(self):
+		node_id = 2200
+		content_name = '10454'
+		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':0, '_type': 'request', 'size': 1})
+		color_dict = self.get_color(node_id)
+		canvas_id = self.nodes[node_id].canvas_id
+		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
+		self.canvas.update()
+		
 
 
 	def reload(self, ammo):
@@ -625,42 +613,7 @@ class Network(object):
 	def get_random_leaf_machine(self):
 		return random.randint(self.lower_lim, self.upper_lim)
 	
-	def publish_content( self,content_name, content_data, dest_id):
-		####dest_id hard coded right now, random
-		#dest_id = self.get_random_leaf_machine()
-		#logging.debug(' Publishing content: (%s)  to  node %d', content_name, dest_id)
-		self.nodes[dest_id].content_store[content_name] =  content_data
-
-		if self.delay > 500:
-			self.canvas.itemconfig(self.nodes[dest_id].canvas_id, outline='purple', width=2.0)
-			self.canvas.update()
-			sleep(self.delay/1000)
-			self.canvas.itemconfig(self.nodes[dest_id].canvas_id, outline='grey', width=1.0)
-			self.canvas.update()
-
-
-		#logging.debug(' Updating forwarding tables of parents of node %d ... ' % dest_id)
-		# Get all parents of dest node until reaching root 1
-		flag = False
-		current = dest_id
-		parent_id = self.get_parent(dest_id)
-		while ( parent_id != 0 ):    # parent of 1 always returns 0
-			self.nodes[parent_id].forwarding_table[content_name] = current
-			if self.delay > 500:
-				self.canvas.itemconfig(self.nodes[parent_id].canvas_id, outline='purple', width=2.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(parent_id)].canvas_id, outline='purple', width=2.0)
-				self.canvas.update()
-				sleep(self.delay/1000)
-				self.canvas.itemconfig(self.nodes[parent_id].canvas_id, outline='grey', width=1.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(parent_id)].canvas_id, outline='grey', width=1.0)
-				self.canvas.update()
-			#logging.debug(' Updated forwarding table of node %d ' % parent_id)
-			#logging.debug(' Forwarding table now is: %s', str(self.nodes[parent_id].forwarding_table))
-			current = parent_id
-			parent_id = self.get_parent(parent_id)
-		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
-	
-	
+		
 	def get_child_at(self,direction, node_id):
 		if (direction.lower() == 'c'):
 			return 7*node_id + 1
@@ -718,6 +671,9 @@ class Network(object):
 				return {'color':'dark orange', 'width':2.0}
 			elif size < 300:
 				return {'color':'red', 'width':2.0}
+			else: 
+				return {'color':'red', 'width':2.0}
+
 		else:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
@@ -726,6 +682,8 @@ class Network(object):
 			elif size < 75:
 				return {'color':'dark orange', 'width':2.0}
 			elif size < 101:
+				return {'color':'red', 'width':2.0}
+			else: 
 				return {'color':'red', 'width':2.0}
 	
 	def deliver_in_transit_packets(self):
