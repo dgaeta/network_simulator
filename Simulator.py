@@ -213,6 +213,11 @@ class Network(object):
 			)
 		self.button.grid(row=3,column=5, sticky='n')
 
+		self.button = tk.Button(
+			self.frame, text="status", fg="red", width=10, command=lambda: self.status()
+			)
+		self.button.grid(row=3,column=5, sticky='s')
+
 		
 
 
@@ -675,13 +680,19 @@ class Network(object):
 		return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
 	tk.Canvas.create_circle = _create_circle
 
+	def status(self):
+		print str(self.in_transit_packets)
+		for n in self.nodes:
+			print str(self.nodes[n].incoming)
+
+
 
 
 	## Core simulator functions				
 	def prepare(self):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = 2800
+		leaf_id = 2790
 		while (leaf_id > 450 and self.flag):
 			content_name = str(content_index)
 			self.publish_content(content_name, content_name, leaf_id)
@@ -719,7 +730,6 @@ class Network(object):
 		self.nodes[node_id].incoming.append(packet)
 		color_dict = self.get_color(node_id)
 		canvas_id = self.nodes[node_id].canvas_id
-		#if self.canvas.itemcget(canvas_id, 'outline') != color_dict['color']:
 		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 			
@@ -779,9 +789,9 @@ class Network(object):
 				
 				#Update the color now that we popped an incoming packet
 				""" TODO: UNCOMMENT IF USING GUI"""
-				#color_dict = self.get_color(node_id)
-				#self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-				#self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+				color_dict = self.get_color(node_id)
+				self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 
 
 				if packet['_type'] == 'request':
@@ -850,7 +860,7 @@ class Network(object):
 					if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
 						print packet['time_start']
 						time_now = time.clock()
-						self.round_trip_times.append((time_now - packet['time_start']))
+						self.round_trip_times.append(int(time_now - packet['time_start']))
 						#nowself.root.after_idle(self.single_RRT_average)
 						logging.debug(" DONE! I am the source: %d" % node_id)
 						self.nodes[node_id].content_store[content_name] = data
@@ -892,11 +902,11 @@ class Network(object):
 					
 				else:
 					logging.warning(' Mislabeled Packet')
-					""" TODO: UNCOMMENT IF USING GUI
+					""" TODO: UNCOMMENT IF USING GUI """
 					color_dict = self.get_color(node_id)
 					self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 					self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-					"""
+					
 			i += 1
 	
 	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
