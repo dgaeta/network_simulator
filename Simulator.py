@@ -15,6 +15,8 @@ import Routers
 import random
 import sys
 import numpy as np
+import csv
+from Routers import *
 
 logging.getLogger().setLevel(logging.DEBUG)
 
@@ -35,10 +37,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 	} 
 """
 
-def _create_circle(self, x, y, r, **kwargs):
-	"""implementation for creating a circle in Tk"""
-	return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
-	tk.Canvas.create_circle = _create_circle
+
 
 def is_empty( any_structure):
 		if any_structure:
@@ -65,7 +64,7 @@ class AutoScrollbar(tk.Scrollbar):
 
 
 class Network(object):
-	def __init__(self, levels, gui_boolean):
+	def __init__( self, levels, gui_boolean):
 		
 		#### data structs for the network
 		self.nodes = {}
@@ -91,6 +90,7 @@ class Network(object):
 		else:
 			self.build_without_gui(self.levels)
 		####
+		# CSV file for writing round trip times
 		
 		
 	## GUI for network sim 
@@ -151,7 +151,7 @@ class Network(object):
 
 		# Degree of stress on network nodes
 		self.request_freq = tk.Scale(
-			self.frame, from_=0, to=100, orient='horizontal', command=self.reload, label='Network Activity', length=150
+			self.frame, from_=0, to=100, orient='horizontal', command=self.request_freq_callback, label='Network Activity', length=150
 			)
 		self.request_freq.set(30)
 		self.request_freq.grid(row=1,column=0)
@@ -188,7 +188,7 @@ class Network(object):
 		self.entry1.grid(row=0,column=5, sticky='n')
 
 		self.highlight_button = tk.Button(
-			self.frame, text="Highlight Node", width=10, command=lambda: self.highlight())
+			self.frame, text="Highlight", width=10, command=lambda: self.highlight())
 		self.highlight_button.grid(row=0,column=5,sticky='s')
 
 		self.regions_button = tk.Button(
@@ -201,24 +201,26 @@ class Network(object):
 
 		self.regions_button = tk.Button(
 			self.frame, text="Show Request", width=10, command=lambda: self.show_request())
-		self.regions_button.grid(row=3,column=5, sticky='n')
-
-		self.button = tk.Button(
-			self.frame, text="DDoS", fg="red", width=10, command=lambda: self.DDoS()
-			)
-		self.button.grid(row=3,column=5, sticky='s')
+		self.regions_button.grid(row=2,column=5, sticky='s')
 
 		#self.button = tk.Button(
-		#	self.frame, text="RRT", fg="red", width=10, command=lambda: self.single_RRT_average()
+		#	self.frame, text="DDoS", fg="red", width=10, command=lambda: self.DDoS()
 		#	)
-		#self.button.grid(row=2,column=5, sticky='n')
+		#self.button.grid(row=3,column=5, sticky='n')
+
+		self.button = tk.Button(
+			self.frame, text="RRT", fg="red", width=10, command=lambda: self.round_trip_time()
+			)
+		self.button.grid(row=3,column=5, sticky='n')
+
+		
 
 
 
 
 
 		## Enqueue the build into the mainloop
-		self.root.after(0, self.build_with_gui(levels))
+		self.root.after(0, self.build_with_gui(self.levels))
 		##
 		self.root.after_idle(self.assemble_regions)	
 		self.root.wm_title("Name Based Routing Simulator")
@@ -248,6 +250,9 @@ class Network(object):
 
 	def quit(self):
 		self.flag = False
+		with open('rtt.csv', 'wb') as csvfile:
+			self.rtt = csv.writer(csvfile, delimiter=' ')
+			self.rtt.writerow(self.round_trip_times)
 		self.root.destroy()
 		sys.exit()
 
@@ -346,6 +351,9 @@ class Network(object):
 			parent_id = self.get_parent(parent_id)
 		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
 
+	def request_freq_callback(self, new_value):
+		self.request_freq.set(new_value)
+
 	def show_request(self):
 		node_id = 2200
 		content_name = '10454'
@@ -357,14 +365,18 @@ class Network(object):
 		
 	def round_trip_time(self):
 		logging.debug('Initializing RTT test:')
-		content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
-		requester_id = self.get_random_leaf_machine()
-		time_start = time.clock()
-		packet = {'content_name':content_name, '_type':'request', 'from_id':0, 'time_start':time_start, 'size':1 }
-		self.enqueue_to_incoming(requester_id, packet )
-		logging.debug('Content name: %s -- Requester ID: %d -- Packet %s', content_name, requester_id, str(packet))
-		if len(self.round_trip_times) > 0:
-			print np.mean(self.round_trip_times)
+		#if method=='random':
+		#	logging.debug('Starting random content test:')
+		#	pass
+		#elif method=='no cache':
+		logging.debug('Starting no cached content test:')
+		for index in range(0,10):
+			name = self.content_names[index]
+			requester_id = self.get_random_leaf_machine()
+			time_start = time.clock()
+			packet = {'content_name':name, '_type':'request', 'from_id':0, 'time_start':time_start, 'size':1 }
+			self.enqueue_to_incoming(requester_id, packet )
+			logging.debug('Content name: %s -- Requester ID: %d -- Packet %s', name, requester_id, str(packet))
 
 	def DDoS(self):
 		DDoS_region = self.regions[random.randint(0,len(self.regions)-1)]
@@ -589,76 +601,79 @@ class Network(object):
 
 			#center
 			canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
-			self.nodes[7*i+1] = Routers.NBRouter(7*i+1, canvas_id)
+			self.nodes[7*i+1] = NBRouter(7*i+1, canvas_id)
 			self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
 			self.root.after(0, self._build_with_gui(level-1,7*i+1,r/3,x,(y)))
 
 			#north
 			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+2))
-			self.nodes[7*i+2] = Routers.NBRouter(7*i+2, canvas_id)
+			self.nodes[7*i+2] = NBRouter(7*i+2, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+2,r/3,x,(y-(2.0*r))))
 
 			#south
 			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+3))
-			self.nodes[7*i+3] = Routers.NBRouter(7*i+3, canvas_id)
+			self.nodes[7*i+3] = NBRouter(7*i+3, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+3,r/3,x,(y+(2.0*r))))
 
 			#northeast
 			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+4))            
-			self.nodes[7*i+4] = Routers.NBRouter(7*i+4, canvas_id)
+			self.nodes[7*i+4] = NBRouter(7*i+4, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+4,r/3,x+2*r*math.sqrt(3)/2,(y-r)))
 
 			#southeast
 			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+5))
-			self.nodes[7*i+5] = Routers.NBRouter(7*i+5, canvas_id)
+			self.nodes[7*i+5] = NBRouter(7*i+5, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+5,r/3,x+2*r*math.sqrt(3)/2,(y+r)))
 
 			#northwest
 			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+6))
-			self.nodes[7*i+6] = Routers.NBRouter(7*i+6, canvas_id)
+			self.nodes[7*i+6] = NBRouter(7*i+6, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+6,r/3,x-2*r*math.sqrt(3)/2,(y-r)))
 
 			#southwest
 			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+7))
-			self.nodes[7*i+7] = Routers.NBRouter(7*i+7, canvas_id)
+			self.nodes[7*i+7] = NBRouter(7*i+7, canvas_id)
 			self.root.after(0, self._build_with_gui(level-1,7*i+7,r/3,x-2*r*math.sqrt(3)/2,(y+r)))
 					
 		else:
 			if level == 0:
 				#center
 				canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
-				self.nodes[7*i+1] = Routers.NBRouter(7*i+1, canvas_id)
+				self.nodes[7*i+1] = NBRouter(7*i+1, canvas_id)
 				
 				#north
 				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+2))
-				self.nodes[7*i+2] = Routers.NBRouter(7*i+2, canvas_id)
+				self.nodes[7*i+2] = NBRouter(7*i+2, canvas_id)
 			   
 				#south
 				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+3))
-				self.nodes[7*i+3] = Routers.NBRouter(7*i+3, canvas_id)
+				self.nodes[7*i+3] = NBRouter(7*i+3, canvas_id)
 
 				#northeast
 				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r), r, outline = 'grey', width = 1.0, tags=str(7*i+4))
-				self.nodes[7*i+4] = Routers.NBRouter(7*i+4, canvas_id)
+				self.nodes[7*i+4] = NBRouter(7*i+4, canvas_id)
 			   
 				#southeast
 				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+5))
-				self.nodes[7*i+5] = Routers.NBRouter(7*i+5, canvas_id)
+				self.nodes[7*i+5] = NBRouter(7*i+5, canvas_id)
 			  
 				#northwest
 				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+6))
-				self.nodes[7*i+6] = Routers.NBRouter(7*i+6, canvas_id)
+				self.nodes[7*i+6] = NBRouter(7*i+6, canvas_id)
 			   
 
 				#southwest
 				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+7))
-				self.nodes[7*i+7] = Routers.NBRouter(7*i+7, canvas_id)
-
+				self.nodes[7*i+7] = NBRouter(7*i+7, canvas_id)
 
 	## Debugging functions
 	def in_transit(self): # Used for debugging
 		logging.debug(' packets in transit: %s', str(self.in_transit_packets))
 
+	def _create_circle(self, x, y, r, **kwargs):
+		"""implementation for creating a circle in Tk"""
+		return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
+	tk.Canvas.create_circle = _create_circle
 
 
 
@@ -702,6 +717,11 @@ class Network(object):
 	def enqueue_to_incoming(self, node_id, packet):
 		#self.nodes[node_id].total_load += packet['size']
 		self.nodes[node_id].incoming.append(packet)
+		color_dict = self.get_color(node_id)
+		canvas_id = self.nodes[node_id].canvas_id
+		#if self.canvas.itemcget(canvas_id, 'outline') != color_dict['color']:
+		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
+		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 			
 	def step(self):
 		for n in reversed(range(1, len(self.nodes))):
@@ -719,13 +739,13 @@ class Network(object):
 				self.enqueue_to_incoming(dest_id, packet)
 				logging.debug(' Delivered packet from %d to %d', packet['from_id'], packet['dest_id'])
 				#Update the edge color to the recipient
-				####color_dict = self.get_color(dest_id)
-				####canvas_id = self.nodes[dest_id].canvas_id
+				color_dict = self.get_color(dest_id)
+				canvas_id = self.nodes[dest_id].canvas_id
 				#if self.canvas.itemcget(canvas_id, 'outline') != color_dict['color']:
-				####self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
-				####self.canvas.itemconfig(self.nodes[self.get_actual_node(dest_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
+				self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
+				self.canvas.itemconfig(self.nodes[self.get_actual_node(dest_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 				#self.canvas.update_idletasks()
-			#####self.root.after_idle(self.deliver_in_transit_packets)      
+			self.root.after(0,self.deliver_in_transit_packets)      
 
 	def computation_power(self, node_id):
 		if node_id <= 7:
@@ -865,11 +885,11 @@ class Network(object):
 						self.nodes[node_id].content_store[packet['content_name']] = data
 						logging.debug(" Added content (%s) to content store"  % content_name)
 
-					""" TODO: UNCOMMENT IF USING GUI
+					""" TODO: UNCOMMENT IF USING GUI """
 					color_dict = self.get_color(node_id)
 					self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 					self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-					"""
+					
 				else:
 					logging.warning(' Mislabeled Packet')
 					""" TODO: UNCOMMENT IF USING GUI
@@ -956,7 +976,7 @@ class Network(object):
 		return x
 
 	def get_random_leaf_machine(self):
-		return random.randint(self.lower_lim, self.upper_lim)
+		return random.randint(self.lower_lim+1, self.upper_lim)
 	
 	def get_child_at(self,direction, node_id):
 		if (direction.lower() == 'c'):
@@ -999,7 +1019,7 @@ class Network(object):
 	
 	def get_color(self, node_id):
 		#size = len(self.nodes[node_id].incoming) #account for length of incoming
-		size = self.nodes[node_id].total_load
+		size = self.nodes[node_id].total_load()
 		#for key in self.nodes[node_id].pending_table:     #account for size of awaiting requests
 		#	size += len(self.nodes[node_id].pending_table[key])
 
@@ -1018,7 +1038,7 @@ class Network(object):
 		else:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
-			elif size < 5:
+			elif size < 10:
 				return {'color':'blue', 'width':2.0}
 			elif size < 75:
 				return {'color':'dark orange', 'width':2.0}

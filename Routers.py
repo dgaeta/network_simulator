@@ -12,8 +12,9 @@ logging.getLogger().setLevel(logging.DEBUG)
 class NBRouter:
 # Name based content facilitated server
 
-  def __init__(self, _id):
+  def __init__(self, _id, canvas_id):
     self.id = _id
+    self.canvas_id = canvas_id
     self.incoming = deque()
     self.responses = deque()
     self.color = ''
@@ -22,7 +23,7 @@ class NBRouter:
     self.pending_table = {}
    
   def total_load(self):
-    return len(self.incoming) + len(self.responses)
+    return len(self.incoming) 
 
 
   def incoming_packet(self, content_name, from_id, _type):
