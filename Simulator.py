@@ -1,5 +1,5 @@
 ##
-# Network Simulator to predict behavior of Name Based Routing Algorithm
+# Network Simulator to show behavior of Name Based Routing Algorithm
 # 
 #
 # author: Daniel Gaeta 
@@ -16,6 +16,10 @@ import random
 import sys
 import numpy as np
 import csv
+import copy
+from datetime import datetime
+from apscheduler.scheduler import Scheduler
+import atexit
 from Routers import *
 
 logging.getLogger().setLevel(logging.DEBUG)
@@ -27,16 +31,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 # implement the default mpl key bindings
 #from matplotlib.backend_bases import key_press_handler
 
-""" packetization example: 
-	{
-		'content_name': string ,
-	 	'from_id': int ,      				
-	 	'content_data': string,				
-	  	'_type':'response' or 'request' ,	
-	  	'dest_id': int 
-	} 
-"""
-
 
 
 def is_empty( any_structure):
@@ -46,6 +40,19 @@ def is_empty( any_structure):
 	else:
 		#print('Structure is empty.')
 		return True
+
+def get_level(node_id):
+		if node_id <= 7:
+			return 0
+		elif node_id <=56:
+			return 1
+		elif node_id <= 399:
+			return 2
+		elif node_id <= 2800:
+			return 3
+		else: 
+			logging.debug('Incorrect Node ID given at get_level')
+
 
 class AutoScrollbar(tk.Scrollbar):
     # a scrollbar that hides itself if it's not needed.  only
@@ -75,10 +82,11 @@ class Network(object):
 		self.regions = []
 		self.total_round_trip_times = []
 		self.rtt_slices = []
-		self.level_congestion = {'0':0, '1':0, '2':0, '3':0}
+		self.level_congestion = {0:0, 1:0, 2:0, 3:0}
+		self.total_congestions = []
 		self.packets_to_be_delivered = []
 
-		# data structures used for gui simulation
+		# data structures used for gui animation
 		self.flag = True
 		self.in_transit_packets = []
 		self.delay = 500
@@ -944,9 +952,32 @@ class Network(object):
 			
 	def loop_step(self):
 		for n in range(1, len(self.nodes)):
-			self.process_without_gui(n)       
-		#self.deliver_in_transit_packets()
-	
+			self.process_without_gui(n) 
+
+		congestion = 0 
+		node_level = 0
+		for n in range(1, 8):
+			congestion +=  len(self.nodes[n].incoming)
+		self.level_congestion[node_level] = congestion
+
+		congestion = 0 
+		node_level = 1
+		for n in range(8, 57):
+			congestion +=  len(self.nodes[n].incoming)
+		self.level_congestion[node_level] = congestion
+
+		congestion = 0 
+		node_level = 2
+		for n in range(57, 400):
+			congestion +=  len(self.nodes[n].incoming)
+		self.level_congestion[node_level] = congestion
+
+		congestion = 0 
+		node_level = 3
+		for n in range(400, 2801):
+			congestion +=  len(self.nodes[n].incoming)
+		self.level_congestion[node_level] = congestion
+
 	def process_without_gui(self, node_id):
 		# higher level nodes have a faster computation model
 		comp_power = self.computation_power(node_id)
@@ -959,7 +990,7 @@ class Network(object):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
-				
+
 
 				if packet.type == 'request':   
 					  
@@ -969,7 +1000,7 @@ class Network(object):
 						if packet.requester_id == 0: # Case where active request hasnt been created yet but content in cache
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							packet.lifetime += 20
-							self.rtt_slices += packet.lifetime
+							self.rtt_slices.append(packet.lifetime)
 						else:
 							self.send_packet('response', packet.content_name,  node_id, packet.requester_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
 							logging.debug(" content %s already in cache", packet.content_name) 
@@ -978,7 +1009,7 @@ class Network(object):
 					# Case 2: duplicate request exists
 					elif packet.content_name in self.nodes[node_id].pending_table:   
 
-						self.nodes[node_id].pending_table[content_name] += [packet.requester_id]
+						self.nodes[node_id].pending_table[packet.content_name] += [packet.requester_id]
 						#logging.debug(" duplicate request for content %s , added requester_id %d to PT", packet[content_name], packet[requester_id]) 
 						logging.debug(" duplicate request for content , added requester_id %d to PT", packet.requester_id) 
 					
@@ -1052,16 +1083,85 @@ class Network(object):
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
 			self.deliver_packets()
+		else:
+			congestion = 0 
+			node_level = 0
+			for n in range(1, 8):
+				congestion +=  len(self.nodes[n].incoming)
+			self.level_congestion[node_level] = congestion
+
+			congestion = 0 
+			node_level = 1
+			for n in range(8, 57):
+				congestion +=  len(self.nodes[n].incoming)
+			self.level_congestion[node_level] = congestion
+
+			congestion = 0 
+			node_level = 2
+			for n in range(57, 400):
+				congestion +=  len(self.nodes[n].incoming)
+			self.level_congestion[node_level] = congestion
+
+			congestion = 0 
+			node_level = 3
+			for n in range(400, 2801):
+				congestion +=  len(self.nodes[n].incoming)
+			self.level_congestion[node_level] = congestion	
+
+	def packet_generator(self,size):
+		for i in range(0,size):
+			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
+			requester_id = self.get_random_leaf_machine()
+			self.send_packet('request',content_name,0,requester_id,0)
 	
-	
+	def warm_up(self,warm_up_seconds):
+		self.packet_generator(50)
+		start = time.time()
+		end = time.time()
+		while end-start <= warm_up_seconds:
+			self.deliver_packets()
+			self.loop_step()
+			self.packet_generator(5)
+			end=time.time()
+		self.simulator(25)
 
 
+	def simulator(self, seconds):
+		sched = Scheduler(daemon=True)
+		sched.start()
+		sched.add_interval_job(self.log_level_congestion, seconds=2)
+		duration_seconds = seconds
+		start = time.time()
+		end = time.time()
+		print 'start'
+		while end-start <= duration_seconds:
+			self.deliver_packets()
+			sys.stdout.write('.')
+			self.loop_step()
+			end = time.time()
+			self.packet_generator(50)
+		self.write_level_congestions()
+		sched.shutdown()
+
+	def log_level_congestion(self):
+		self.total_congestions.append(copy.deepcopy(self.level_congestion))
+
+	def write_level_congestions(self):
+		for dic in self.total_congestions:
+			for key, value in dic.iteritems():
+				open("level_congestion.csv","a").write(str(value)+ ',')
+			open("level_congestion.csv","a").write("'\n'")
+
+	def write_average_rtt(self):
+		for item in self.rtt_slices:
+			open("rtt.csv","a").write(str(item) + ' ')
 
 
 
 
 
 	## Utility functions for network accessability 
+
 	def get_other_leaf_machine(self,node_id):
 		x = node_id
 		while x == node_id:
