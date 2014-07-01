@@ -213,15 +213,12 @@ class Network(object):
 			)
 		self.button.grid(row=3,column=5, sticky='n')
 
-		self.button = tk.Button(
-			self.frame, text="status", fg="red", width=10, command=lambda: self.status()
-			)
-		self.button.grid(row=3,column=5, sticky='s')
+		#self.button = tk.Button(
+		#	self.frame, text="status", fg="red", width=10, command=lambda: self.status()
+		#	)
+		#self.button.grid(row=3,column=5, sticky='s')
 
 		
-
-
-
 
 
 		## Enqueue the build into the mainloop
@@ -260,6 +257,7 @@ class Network(object):
 			self.rtt.writerow(self.round_trip_times)
 		self.root.destroy()
 		sys.exit()
+		sys.quit()
 
 	def highlight(self):   # Used for debugging to highlight a node or region
 		""" Used for highlighting a single node """
@@ -375,7 +373,7 @@ class Network(object):
 		#	pass
 		#elif method=='no cache':
 		logging.debug('Starting no cached content test:')
-		for index in range(0,10):
+		for index in range(0,50):
 			name = self.content_names[index]
 			requester_id = self.get_random_leaf_machine()
 			time_start = time.clock()
@@ -860,7 +858,7 @@ class Network(object):
 					if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
 						print packet['time_start']
 						time_now = time.clock()
-						self.round_trip_times.append(int(time_now - packet['time_start']))
+						self.round_trip_times.append(float(time_now - packet['time_start']))
 						#nowself.root.after_idle(self.single_RRT_average)
 						logging.debug(" DONE! I am the source: %d" % node_id)
 						self.nodes[node_id].content_store[content_name] = data

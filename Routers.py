@@ -48,6 +48,8 @@ class NBRouter:
     else: 
       logging.warning(' no type given for outgoing packet')
 
+  
+
           
   def color(self):
     pass
