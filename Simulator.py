@@ -42,16 +42,16 @@ def is_empty( any_structure):
 		return True
 
 def get_level(node_id):
-		if node_id <= 7:
-			return 0
-		elif node_id <=56:
-			return 1
-		elif node_id <= 399:
-			return 2
-		elif node_id <= 2800:
-			return 3
-		else: 
-			logging.debug('Incorrect Node ID given at get_level')
+	if node_id <= 7:
+		return 0
+	elif node_id <=56:
+		return 1
+	elif node_id <= 399:
+		return 2
+	elif node_id <= 2800:
+		return 3
+	else: 
+		logging.debug('Incorrect Node ID given at get_level')
 
 
 class AutoScrollbar(tk.Scrollbar):
@@ -101,6 +101,7 @@ class Network(object):
 		if self.gui_boolean:
 			self.initialize_gui()
 		else:
+			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		
 		
@@ -451,7 +452,7 @@ class Network(object):
 			self.zoom_level -= 1
 		self.pause()
 		self.canvas.delete('all')
-		self._redraw(self.levels, 0, self.radius, 600, 540)
+		self._zoom(self.levels, 0, self.radius, 600, 540)
 		bounds = self.canvas.bbox('all')  # returns a tuple like (x1, y1, x2, y2)
 		width = bounds[2] - bounds[0]
 		height = bounds[3] - bounds[1]
@@ -735,7 +736,6 @@ class Network(object):
 					# Packet is a request      
 					content_name = packet['content_name']
 					requester_id = packet['from_id']  
-					time_start = packet['time_start']     
 					
 					# Case 1: content in cache
 					if content_name in self.nodes[node_id].content_store:
@@ -746,7 +746,7 @@ class Network(object):
 						else:
 							self.nodes[node_id].outgoing_packet({ 'content_name': content_name, 'from_id':node_id,
 																 'content_data':self.nodes[node_id].content_store[content_name], 
-																 'dest_id':requester_id, '_type':'response', 'size':1, 'time_start':packet['time_start']},
+																 'dest_id':requester_id, '_type':'response', 'size':1 },
 																 self.in_transit_packets)
 							logging.debug(" content %s already in cache", content_name) 
 							logging.debug(" sent content back to  %d ", requester_id)
@@ -761,7 +761,7 @@ class Network(object):
 						directed_child_id  = self.nodes[node_id].forwarding_table[content_name]   #direction of child where destination node is contained 
 						self.nodes[node_id].pending_table[content_name] = [requester_id]          # entry in PT created
 						self.nodes[node_id].outgoing_packet( {'content_name': content_name , 'dest_id':directed_child_id, 
-															  'from_id': node_id, '_type': 'request', 'size':1, 'time_start':packet['time_start']}, self.in_transit_packets)
+															  'from_id': node_id, '_type': 'request', 'size':1}, self.in_transit_packets)
 						logging.debug(" location content %s known, entry for requester %d created in PT", content_name, requester_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
 
@@ -769,9 +769,8 @@ class Network(object):
 					else:
 						self.nodes[node_id].pending_table[content_name] = [requester_id]
 						parent_id = self.get_parent(node_id)
-						self.nodes[node_id].outgoing_packet({'content_name':content_name, 'from_id':node_id, 'dest_id': parent_id, "_type": 'request', 'size':1, 'time_start':time_start }, self.in_transit_packets)
+						self.nodes[node_id].outgoing_packet({'content_name':content_name, 'from_id':node_id, 'dest_id': parent_id, "_type": 'request', 'size':1 }, self.in_transit_packets)
 						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", content_name, requester_id, parent_id) 
-						print 'time start is' + str(packet['time_start'])
 					  	
 
 
@@ -783,9 +782,6 @@ class Network(object):
 
 					# Case 1: node is source of request, 0 signifies it is the source of request
 					if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
-						print packet['time_start']
-						time_now = time.clock()
-						self.round_trip_times.append(float(time_now - packet['time_start']))
 						#nowself.root.after_idle(self.single_RRT_average)
 						logging.debug(" DONE! I am the source: %d" % node_id)
 						self.nodes[node_id].content_store[content_name] = data
@@ -802,8 +798,7 @@ class Network(object):
 								logging.debug(" DONE! I am a source: %d" % node_id)
 							else:
 								self.nodes[node_id].outgoing_packet({'content_name':packet['content_name'], 'from_id':node_id, 
-																	 'content_data':data, '_type':'response', 'dest_id':dest_id, 'size':1,
-																	 'time_start':packet['time_start']},
+																	 'content_data':data, '_type':'response', 'dest_id':dest_id, 'size':1},
 																	self.in_transit_packets )
 								logging.debug("Sent response to requester %d ", dest_id)
 								logging.debug("Forwarding to all requesters complete")
@@ -942,7 +937,7 @@ class Network(object):
 
 	def computation_power(self, node_id):
 		if node_id <= 7:
-			return 4
+			return 6
 		elif node_id <= 56:
 			return 3
 		elif node_id <= 399:
@@ -1109,48 +1104,53 @@ class Network(object):
 			self.level_congestion[node_level] = congestion	
 
 	def packet_generator(self,size):
+		logging.debug('packet_generator called, starting...')
 		for i in range(0,size):
 			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
 			requester_id = self.get_random_leaf_machine()
 			self.send_packet('request',content_name,0,requester_id,0)
+
+	def standard_traffic(self):
+		logging.debug('standard_traffic called, begginging packet_generator')
+		self.packet_generator(500)
 	
 	def warm_up(self,warm_up_seconds):
-		self.packet_generator(50)
+		self.sched.start()
+		self.sched.add_interval_job(self.standard_traffic,seconds=1)
+		logging.debug('phase 1 packet_generator completem, begging sched and warm_up')
 		start = time.time()
 		end = time.time()
 		while end-start <= warm_up_seconds:
 			self.deliver_packets()
 			self.loop_step()
-			self.packet_generator(5)
 			end=time.time()
-		self.simulator(25)
-
+			#self.packet_generator(50)
+		self.simulator(20)
 
 	def simulator(self, seconds):
-		sched = Scheduler(daemon=True)
-		sched.start()
-		sched.add_interval_job(self.log_level_congestion, seconds=2)
+		self.sched.add_interval_job(self.log_level_congestion, seconds=2)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
 		print 'start'
 		while end-start <= duration_seconds:
 			self.deliver_packets()
-			sys.stdout.write('.')
 			self.loop_step()
 			end = time.time()
-			self.packet_generator(50)
+		self.sched.shutdown()
 		self.write_level_congestions()
-		sched.shutdown()
+		
 
 	def log_level_congestion(self):
 		self.total_congestions.append(copy.deepcopy(self.level_congestion))
 
 	def write_level_congestions(self):
+		level_file = open("level_congestion.csv","a")
 		for dic in self.total_congestions:
+			string = ''
 			for key, value in dic.iteritems():
-				open("level_congestion.csv","a").write(str(value)+ ',')
-			open("level_congestion.csv","a").write("'\n'")
+				string += str(value) + ','
+			level_file.write(string.strip(',') + "\n")
 
 	def write_average_rtt(self):
 		for item in self.rtt_slices:
