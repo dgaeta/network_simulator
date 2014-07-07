@@ -42,14 +42,16 @@ def is_empty( any_structure):
 		return True
 
 def get_level(node_id):
-	if node_id <= 7:
+	if node_id == 0:
 		return 0
-	elif node_id <=56:
+	elif node_id <=7:
 		return 1
-	elif node_id <= 399:
+	elif node_id <= 56:
 		return 2
-	elif node_id <= 2800:
+	elif node_id <= 399:
 		return 3
+	elif node_id <= 2800:
+		return 4
 	else: 
 		logging.debug('Incorrect Node ID given at get_level')
 
@@ -77,41 +79,46 @@ class Network(object):
 		self.nodes = {}
 		self.levels = levels
 		self.lower_lim = 400
-		self.upper_lim = ((7**(levels+1))-3)
+		self.upper_lim = ((7**(levels))-3)
 		self.content_names = []
 		self.regions = []
 		self.total_round_trip_times = []
-		self.rtt_slices = []
+		self.rt_times = []
+		self.rtt_means = []
 		self.level_congestion = {0:0, 1:0, 2:0, 3:0}
 		self.total_congestions = []
 		self.packets_to_be_delivered = []
+		self.ip_rt_times = []
+		self.ip_rtt_means = []
 
-		# data structures used for gui animation
-		self.flag = True
-		self.in_transit_packets = []
-		self.delay = 500
-		self.ammo = 0 
-		self.simulation_state = ''
-		self.root = ''
-		self.highlight_entry = ''
-		self.radius = 150
-		self.zoom_level = 0
-		
+
 		self.gui_boolean = gui_boolean
 		if self.gui_boolean:
+			self.x_origin = 900
+			self.y_origin = 540
+			self.radius = 150 
+			self.flag = True
+			self.in_transit_packets = []
+			self.delay = 500
+			self.ammo = 0 
+			self.simulation_state = ''
+			self.root = ''
+			self.radius = 150
+			self.zoom_level = 0
 			self.initialize_gui()
+			self.command_entry = ''
 		else:
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		
 		
 		
-	## GUI for network sim 
+	## Buttons and Sliders
 	def initialize_gui(self):
 		self.root = tk.Tk()
 		self.simulation_state = tk.StringVar()
 		self.simulation_state.set('PLAYING')
-		self.highlight_entry = tk.StringVar()
+		self.command_entry = tk.StringVar()
 
 		# Give the window scrolls
 		vscrollbar = AutoScrollbar(self.root)
@@ -119,7 +126,7 @@ class Network(object):
 		hscrollbar = AutoScrollbar(self.root, orient='horizontal')
 		hscrollbar.grid(row=2, column=0, sticky='e'+'w')
 
-		self.frame = tk.Frame(self.root, height=600,width=900, relief='raised', bd=2)
+		self.frame = tk.Frame(self.root, height=500,width=1000, relief='raised', bd=2)
 		self.frame.grid(row=0,column=0)
 		self.frame.grid_rowconfigure(0, weight=0)
 		self.frame.grid_columnconfigure(0, weight=1)
@@ -127,7 +134,7 @@ class Network(object):
 		self.canvas = tk.Canvas(self.root,width=825,height=600,
                 yscrollcommand=vscrollbar.set,
                 xscrollcommand=hscrollbar.set)
-		self.canvas.grid(row=1, column=0, sticky='e'+'w'+'n'+'s' )
+		self.canvas.grid(row=1, column=0, sticky='e'+'w'+'n'+'s', columnspan=2)
 		self.canvas.grid_columnconfigure(0, weight=1)
 		self.canvas.grid_rowconfigure(1, weight=1)
 
@@ -135,7 +142,7 @@ class Network(object):
 		hscrollbar.config(command=self.canvas.xview)
 
 		# make the frame not expandable
-		self.root.grid_rowconfigure(0, weight=0, minsize=150)
+		self.root.grid_rowconfigure(0, weight=0, minsize=0)
 		self.root.grid_columnconfigure(0, weight=0, minsize=700)
 		# make the canvas expandable
 		self.root.grid_rowconfigure(1, weight=1, minsize=150)
@@ -147,13 +154,13 @@ class Network(object):
 		self.label = tk.Label(
 			self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
 		self.label.photo = photo
-		self.label.grid(row=3,column=1, columnspan=4,padx=20)
+		self.label.grid(row=0,column=7, columnspan=4)
 
 		# label for simulatoin state
-		self.simulation_state_label = tk.Label(
-			self.frame, textvariable=self.simulation_state
-			)
-		self.simulation_state_label.grid(row=2,column=1)
+		#self.simulation_state_label = tk.Label(
+		#	self.frame, textvariable=self.simulation_state
+		#	)
+		#self.simulation_state_label.grid(row=2,column=1)
 
 		# delay in seconds of animation
 		self.delay_scale = tk.Scale(
@@ -167,64 +174,64 @@ class Network(object):
 			self.frame, from_=0, to=100, orient='horizontal', command=self.request_freq_callback, label='Network Activity', length=150
 			)
 		self.request_freq.set(30)
-		self.request_freq.grid(row=1,column=0)
+		self.request_freq.grid(row=0,column=1)
 
 		self.button = tk.Button(
 			self.frame, text="PLAY", fg="red", command=lambda: self.play()
 			)
-		self.button.grid(row=0,column=1)
+		self.button.grid(row=0,column=2)
 
 		self.button = tk.Button(
 			self.frame, text="PAUSE", fg="red", command=lambda: self.pause()
 			)
-		self.button.grid(row=0,column=2)		####
+		self.button.grid(row=0,column=3)		####
 
 		#self.set_buttons()
 		self.button = tk.Button(
 			self.frame, text="QUIT", fg="red", command=lambda: self.quit()
 			)
-		self.button.grid(row=0,column=3)
+		self.button.grid(row=0,column=4)
 
 		# zoom in
 		self.zoom_button = tk.Button(
 			self.frame, text="ZOOM +", command=lambda: self.zoom('in'))
-		self.zoom_button.grid(row=0,column=4, sticky='n')
+		self.zoom_button.grid(row=0,column=5, sticky='n')
 
 		# zoom out 
 		self.zoom_button = tk.Button(
 			self.frame, text="ZOOM -", command=lambda: self.zoom('out'))
-		self.zoom_button.grid(row=0,column=4, sticky='s')
+		self.zoom_button.grid(row=0,column=5, sticky='s')
 		
 		self.entry1 = tk.Entry(
-			self.frame, textvariable=self.highlight_entry)
-		self.entry1.insert(0, "enter node number")
-		self.entry1.grid(row=0,column=5, sticky='n')
+			self.frame, textvariable=self.command_entry)
+		self.entry1.insert(0, "Enter Command")
+		self.entry1.grid(row=0,column=6, sticky='n')
 
 		self.highlight_button = tk.Button(
-			self.frame, text="Highlight", width=10, command=lambda: self.highlight())
-		self.highlight_button.grid(row=0,column=5,sticky='s')
+			self.frame, text="Enter", width=10, command=lambda: self.command_line())
+		self.highlight_button.grid(row=0,column=6,sticky='s')
 
-		self.regions_button = tk.Button(
-			self.frame, text="Show Region", width=10, command=lambda: self.show_region())
-		self.regions_button.grid(row=1,column=5, sticky='n')
+		#self.regions_button = tk.Button(
+		#	self.frame, text="Show Region", width=10, command=lambda: self.show_region())
+		#self.regions_button.grid(row=1,column=5, sticky='n')
 
-		self.regions_button = tk.Button(
-			self.frame, text="Show Publish", width=10, command=lambda: self.show_publish())
-		self.regions_button.grid(row=1,column=5, sticky='s')
+		#self.regions_button = tk.Button(
+		#	self.frame, text="Show Publish", width=10, command=lambda: self.show_publish())
+		#self.regions_button.grid(row=1,column=5, sticky='s')
 
-		self.regions_button = tk.Button(
-			self.frame, text="Show Request", width=10, command=lambda: self.show_request())
-		self.regions_button.grid(row=2,column=5, sticky='s')
+		#self.regions_button = tk.Button(
+		#	self.frame, text="Show Request", width=10, command=lambda: self.show_request())
+		#self.regions_button.grid(row=2,column=5, sticky='s')
 
 		#self.button = tk.Button(
 		#	self.frame, text="DDoS", fg="red", width=10, command=lambda: self.DDoS()
 		#	)
 		#self.button.grid(row=3,column=5, sticky='n')
 
-		self.button = tk.Button(
-			self.frame, text="RRT", fg="red", width=10, command=lambda: self.round_trip_time()
-			)
-		self.button.grid(row=3,column=5, sticky='n')
+		#self.button = tk.Button(
+		#	self.frame, text="RRT", fg="red", width=10, command=lambda: self.round_trip_time()
+		#	)
+		#self.button.grid(row=3,column=5, sticky='n')
 
 		#self.button = tk.Button(
 		#	self.frame, text="status", fg="red", width=10, command=lambda: self.status()
@@ -249,7 +256,7 @@ class Network(object):
 
 
 
-	## Callback funcions for buttons in GUI
+	## Callback funcions for Buttons in GUI
 	def pressed(self, button): # Updates the display of simulator state 
 		self.simulation_state.set(str(button))
 		self.frame.update()
@@ -270,10 +277,23 @@ class Network(object):
 		sys.exit()
 		sys.quit()
 
-	def highlight(self):   # Used for debugging to highlight a node or region
+	def command_line(self):
+		args = str(self.command_entry.get()).split(' ')
+		args[0] = args[0].lower()
+		if args[0] == 'highlight':
+			node_id = int(args[1])
+			self.highlight(node_id)
+		elif args[0] == 'publish':
+			self.show_publish()
+		elif args[0] == 'request':
+			self.show_request()
+		elif args[0] == 'DDoS':
+			self.DDoS()
+		else:
+			logging.debug("Invalid Command %s --- Options are: \n highlight {node id} \n publish \n request \n DDoS", str(self.command_entry.get()))
+
+	def highlight(self,node_id):   # Used for debugging to highlight a node or region
 		""" Used for highlighting a single node """
-		node_id = int(self.highlight_entry.get())
-		self.highlight_entry.set(node_id)
 		print node_id
 		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='purple', width=2.0)
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='purple', width=2.0)
@@ -347,10 +367,10 @@ class Network(object):
 			self.canvas.itemconfig(self.nodes[source_id].canvas_id, outline='grey', width=1.0)
 			self.canvas.update()
 		
-		# Get all parents of source node until reaching root 1
+		# Get all parents of source node until reaching root 0
 		current = source_id
 		parent_id = self.get_parent(source_id)
-		while ( parent_id != 0 ):    # parent of 1 always returns 0
+		while ( parent_id != -1 ):    # parent of 1 always returns -1
 			self.nodes[parent_id].forwarding_table[content_name] = current
 			if self.delay > 500:
 				self.canvas.itemconfig(self.nodes[parent_id].canvas_id, outline='purple', width=2.0)
@@ -371,11 +391,11 @@ class Network(object):
 	def show_request(self):
 		node_id = 2200
 		content_name = '10454'
-		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':0, '_type': 'request', 'size': 1})
+		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':-1, '_type': 'request', 'size': 1})
 		color_dict = self.get_color(node_id)
 		canvas_id = self.nodes[node_id].canvas_id
 		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
-		#self.canvas.update()
+		self.canvas.update()
 		
 	def round_trip_time(self):
 		logging.debug('Initializing RTT test:')
@@ -452,7 +472,11 @@ class Network(object):
 			self.zoom_level -= 1
 		self.pause()
 		self.canvas.delete('all')
-		self._zoom(self.levels, 0, self.radius, 600, 540)
+
+		color_width = self.get_color(0)
+		canvas_id = self.canvas.create_circle(self.x_origin, self.y_origin , self.radius*3, outline = color_width['color'], width = color_width['width'])
+		self.nodes[0].canvas_id = canvas_id
+		self._zoom(self.levels, 0, self.radius, self.x_origin, self.y_origin)
 		bounds = self.canvas.bbox('all')  # returns a tuple like (x1, y1, x2, y2)
 		width = bounds[2] - bounds[0]
 		height = bounds[3] - bounds[1]
@@ -561,7 +585,7 @@ class Network(object):
 
 
 
-	## Functionality used for coupling with gui
+	## Simulator Functionality for GUI
 	def animation(self):
 		if self.simulation_state.get() == 'PLAYING':
 			self.root.after_idle(self.draw)
@@ -577,7 +601,9 @@ class Network(object):
 		# arrange for the next frame to draw in 4 seconds
 				
 	def build_with_gui(self, levels):   # Used for commercial demonstration of the Simulator 
-		self._build_with_gui(levels, 0, 150, 600, 540)
+		canvas_id = self.canvas.create_circle(self.x_origin, self.y_origin , self.radius*3, outline = 'grey', width = 1.0)
+		self.nodes[0] = NBRouter(0, canvas_id, self.gui_boolean)
+		self._build_with_gui(levels-1, 0, self.radius, self.x_origin, self.y_origin)
 	
 	def _build_with_gui(self, level,i,r,x,y):  # Recursive helper
 		""" Helper function for build() """
@@ -593,70 +619,70 @@ class Network(object):
 		if level > 0:
 
 			#center
-			canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
+			canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+1] = NBRouter(7*i+1, canvas_id, self.gui_boolean)
 			self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
 			self.root.after(0, self._build_with_gui(level-1,7*i+1,r/3,x,(y)))
 
 			#north
-			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+2))
+			canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+2] = NBRouter(7*i+2, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+2,r/3,x,(y-(2.0*r))))
 
 			#south
-			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+3))
+			canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+3] = NBRouter(7*i+3, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+3,r/3,x,(y+(2.0*r))))
 
 			#northeast
-			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+4))            
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0)            
 			self.nodes[7*i+4] = NBRouter(7*i+4, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+4,r/3,x+2*r*math.sqrt(3)/2,(y-r)))
 
 			#southeast
-			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+5))
+			canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+5] = NBRouter(7*i+5, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+5,r/3,x+2*r*math.sqrt(3)/2,(y+r)))
 
 			#northwest
-			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+6))
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2 , (y-r) , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+6] = NBRouter(7*i+6, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+6,r/3,x-2*r*math.sqrt(3)/2,(y-r)))
 
 			#southwest
-			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+7))
+			canvas_id = self.canvas.create_circle( x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 			self.nodes[7*i+7] = NBRouter(7*i+7, canvas_id, self.gui_boolean)
 			self.root.after(0, self._build_with_gui(level-1,7*i+7,r/3,x-2*r*math.sqrt(3)/2,(y+r)))
 					
 		else:
 			if level == 0:
 				#center
-				canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0, tags=str(7*i+1))
+				canvas_id = self.canvas.create_circle(x, y , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+1] = NBRouter(7*i+1, canvas_id, self.gui_boolean)
 				
 				#north
-				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+2))
+				canvas_id = self.canvas.create_circle(x, (y-(2.0*r)) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+2] = NBRouter(7*i+2, canvas_id, self.gui_boolean)
 			   
 				#south
-				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0, tags=str(7*i+3))
+				canvas_id = self.canvas.create_circle(x, (y+(2.0*r)) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+3] = NBRouter(7*i+3, canvas_id, self.gui_boolean)
 
 				#northeast
-				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r), r, outline = 'grey', width = 1.0, tags=str(7*i+4))
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y-r), r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+4] = NBRouter(7*i+4, canvas_id, self.gui_boolean)
 			   
 				#southeast
-				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+5))
+				canvas_id = self.canvas.create_circle(x+2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+5] = NBRouter(7*i+5, canvas_id, self.gui_boolean)
 			  
 				#northwest
-				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0, tags=str(7*i+6))
+				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y-r) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+6] = NBRouter(7*i+6, canvas_id, self.gui_boolean)
 			   
 
 				#southwest
-				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0, tags=str(7*i+7))
+				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+7] = NBRouter(7*i+7, canvas_id, self.gui_boolean)
 
 	## Debugging functions
@@ -677,7 +703,7 @@ class Network(object):
 		if( not is_empty(self.in_transit_packets)):
 			packet = self.in_transit_packets.pop()
 			dest_id = packet['dest_id']
-			if dest_id == 0 :
+			if dest_id == -1 :
 				logging.warning(' invalid packet destination: %s', str(packet))
 			else:
 				#self.nodes[dest_id].incoming.append(packet) 
@@ -701,7 +727,7 @@ class Network(object):
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 
 	def step(self):
-		for n in reversed(range(1, len(self.nodes))):
+		for n in reversed(range(0, len(self.nodes))):
 			self.process(n)       
 		#self.deliver_in_transit_packets()
 
@@ -739,7 +765,7 @@ class Network(object):
 					
 					# Case 1: content in cache
 					if content_name in self.nodes[node_id].content_store:
-						if requester_id == 0:
+						if requester_id == -1: ##  -1 signifies it is the source of the request
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							# Case where active request hasnt been created yet but content in cache
 				
@@ -781,7 +807,7 @@ class Network(object):
 					data = packet['content_data'] 
 
 					# Case 1: node is source of request, 0 signifies it is the source of request
-					if ((0 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
+					if ((-1 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
 						#nowself.root.after_idle(self.single_RRT_average)
 						logging.debug(" DONE! I am the source: %d" % node_id)
 						self.nodes[node_id].content_store[content_name] = data
@@ -794,7 +820,7 @@ class Network(object):
 					else:
 						print logging.debug("Forwarding response along to all requesters, I am: %d ... ", node_id)
 						for dest_id in self.nodes[node_id].pending_table[content_name]:
-							if dest_id == 0:
+							if dest_id == -1:
 								logging.debug(" DONE! I am a source: %d" % node_id)
 							else:
 								self.nodes[node_id].outgoing_packet({'content_name':packet['content_name'], 'from_id':node_id, 
@@ -830,9 +856,11 @@ class Network(object):
 
 
 
-	## Core simulator functions				
+	## Simulator Functionality for DES			
 	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
-		self._build_without_gui(levels, 0)
+		self.nodes[0] = NBRouter(0, 0, self.gui_boolean)
+		self._build_without_gui(levels-1, 0)
+
 	
 	def _build_without_gui(self, level,i):  # Recursive helper
 		""" Helper function for build() """
@@ -848,7 +876,7 @@ class Network(object):
 		if level > 0:
 
 			#center
-			self.nodes[7*i+1] = Routers.NBRouter(7*i+1, 0, self.gui_boolean)
+			self.nodes[7*i+1] = Routers.NBRouter(7*i+1, 0, self.gui_boolean) # 0 signifies no canvas id
 			self._build_without_gui(level-1,7*i+1,)
 
 			#north
@@ -903,7 +931,7 @@ class Network(object):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
 		leaf_id = 2790
-		while (leaf_id > 450 and self.flag):
+		while (leaf_id > 450):
 			content_name = str(content_index)
 			self.publish_content(content_name, content_name, leaf_id)
 			self.content_names.append(content_name)
@@ -917,10 +945,10 @@ class Network(object):
 	def publish_content( self,content_name, content_data, source_id):
 		self.nodes[source_id].content_store[content_name] =  content_data
 		
-		# Update all parents hash of source node until reaching root 1
+		# Update all parents hash of source node until reaching root 0
 		current = source_id
 		parent_id = self.get_parent(source_id)
-		while ( parent_id != 0 ):    # get_parent of 1 always returns 0
+		while ( parent_id != -1 ):    # get_parent of 0 always returns -1
 			self.nodes[parent_id].forwarding_table[content_name] = current
 			current = parent_id
 			parent_id = self.get_parent(parent_id)
@@ -937,7 +965,7 @@ class Network(object):
 
 	def computation_power(self, node_id):
 		if node_id <= 7:
-			return 6
+			return 5
 		elif node_id <= 56:
 			return 3
 		elif node_id <= 399:
@@ -946,12 +974,12 @@ class Network(object):
 			return 1
 			
 	def loop_step(self):
-		for n in range(1, len(self.nodes)):
+		for n in range(0, len(self.nodes)):
 			self.process_without_gui(n) 
 
 		congestion = 0 
 		node_level = 0
-		for n in range(1, 8):
+		for n in range(0, 8):
 			congestion +=  len(self.nodes[n].incoming)
 		self.level_congestion[node_level] = congestion
 
@@ -974,6 +1002,7 @@ class Network(object):
 		self.level_congestion[node_level] = congestion
 
 	def process_without_gui(self, node_id):
+		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
 		comp_power = self.computation_power(node_id)
 		i = 0 
@@ -985,17 +1014,18 @@ class Network(object):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
-
+				process_start_time = time.time()
 
 				if packet.type == 'request':   
 					  
 					# Case 1: content in cache
 					if packet.content_name in self.nodes[node_id].content_store:
 
-						if packet.requester_id == 0: # Case where active request hasnt been created yet but content in cache
+						if packet.requester_id == -1: # -1 signifies it is the source of the request
+						# Case where active request hasnt been created yet but content in cache
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							packet.lifetime += 20
-							self.rtt_slices.append(packet.lifetime)
+							self.rt_times.append(packet.lifetime)
 						else:
 							self.send_packet('response', packet.content_name,  node_id, packet.requester_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
 							logging.debug(" content %s already in cache", packet.content_name) 
@@ -1030,8 +1060,8 @@ class Network(object):
 					# packet is a response
 
 					# Case 1: node is source of request, 0 signifies it is the source of request
-					if ((0 in self.nodes[node_id].pending_table[packet.content_name]) and (len(self.nodes[node_id].pending_table[packet.content_name])==1)):
-						self.rtt_slices.append(packet.lifetime)
+					if ((-1 in self.nodes[node_id].pending_table[packet.content_name]) and (len(self.nodes[node_id].pending_table[packet.content_name])==1)):
+						self.rt_times.append(packet.lifetime)
 						logging.debug(" DONE! I am the source: %d" % node_id)
 						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
 						logging.debug(" Added content (%s) to content store"  % packet.content_name)
@@ -1043,8 +1073,9 @@ class Network(object):
 					else:
 						print logging.debug("Forwarding response along to all requesters, I am: %d ... ", node_id)
 						for dest_id in self.nodes[node_id].pending_table[packet.content_name]:
-							if dest_id == 0:
+							if dest_id == -1:
 								logging.debug(" DONE! I am a source: %d" % node_id)
+								self.rt_times.append(packet.lifetime)
 							else:
 								self.send_packet('response', packet.content_name, node_id, dest_id, packet.lifetime, packet.content_data) 			
 								logging.debug("Sent response to requester %d ", dest_id)
@@ -1059,10 +1090,95 @@ class Network(object):
 					
 				else:
 					logging.warning(' Mislabeled Packet')
-					
+
+				process_end_time = time.time()
+				total_processing_time = (process_end_time - process_start_time)/comp_power
+				for packet in self.nodes[node_id].incoming:
+					packet.lifetime += total_processing_time
 			i += 1
 
+
+	def ip_process_without_gui(self, node_id):
+		global process_start_time, process_end_time
+		# higher level nodes have a faster computation model
+		comp_power = self.computation_power(node_id)
+		i = 0 
+		while i < comp_power:
+			# add time of computation to packet lifetime
+			#t1 = time.time()
+
+			if (not is_empty(self.nodes[node_id].incoming)):
+				logging.debug(' processing incoming packet at %d' % node_id)
+				packet = self.nodes[node_id].incoming.popleft()
+				logging.debug(" packet data: %s", str(packet)) 
+				process_start_time = time.time()
+
+				if packet.type == 'request':   
+					  
+					# Case 1: content in cache
+					if packet.content_name in self.nodes[node_id].content_store:
+
+						if packet.requester_id == node_id: # I am the source
+						# Case where active request hasnt been created yet but content in cache
+							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
+							packet.lifetime += 20
+							self.rt_times.append(packet.lifetime)
+						else:
+							self.send_packet('response', packet.content_name,  node_id, packet.requester_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
+							logging.debug(" content %s already in cache", packet.content_name) 
+							logging.debug(" sent content back to  %d ", packet.requester_id)
+							
+
+					# Case 2: location of content lives in children, forward request to child
+					elif packet.content_name in self.nodes[node_id].forwarding_table:
+
+						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name]   #direction of child where destination node is contained 
+						self.send_packet( 'request', packet.content_name ,node_id, directed_child_id, packet.lifetime)
+						logging.debug(" forwarded request to child %d ", directed_child_id )
+
+					# Case 3: location of content not known, send to parent
+					else:
+						parent_id = self.get_parent(node_id)
+						self.send_packet('request', packet.content_name, node_id, parent_id, packet.lifetime )
+						logging.debug(" content %s NOT known sent request to parent %d", packet.content_name, packet.requester_id, parent_id) 
+					 
+
+				elif packet.type == 'response':
+					# packet is a response
+
+					# Case 1: node is source of request
+					if (node_id == packet.requester_id):
+						self.ip_rt_times.append(packet.lifetime)
+						logging.debug(" DONE! I am the source: %d" % node_id)
+						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						logging.debug(" Added content (%s) to content store"  % packet.content_name)
+						
+					# Case 2: node was a middle man
+					else:
+						print logging.debug("Forwarding response along to requesters, I am: %d ... ", node_id)
+						
+						self.send_packet('response', packet.content_name, node_id, pack.dest_id, packet.lifetime, packet.content_data) 			
+						logging.debug("Sent response to requester %d ", pack.dest_id)
+						logging.debug("Forwarding to requester complete")
+
+						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						logging.debug(" Added content (%s) to content store"  % packet.content_name)
+
+				
+					
+				else:
+					logging.warning(' Mislabeled Packet')
+
+				process_end_time = time.time()
+				total_processing_time = (process_end_time - process_start_time)/comp_power
+				for packet in self.nodes[node_id].incoming:
+					packet.lifetime += total_processing_time
+			i += 1
+
+
 	def send_packet(self, _type, content_name, from_id, dest_id, lifetime, *args):
+		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
+		# Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
 		if args:
 			pack = Packet(_type, content_name, from_id,  dest_id, args[0])
 		else:
@@ -1073,15 +1189,18 @@ class Network(object):
 			self.packets_to_be_delivered.append(pack)
 
 	def deliver_packets(self):
+		# Step 2 of 2, ofthe packet sending process
 		if not is_empty(self.packets_to_be_delivered):
 			pack = self.packets_to_be_delivered.pop()
 			dest_id = pack.dest_id
+			print
 			self.nodes[dest_id].incoming.append(pack)
 			self.deliver_packets()
 		else:
+			
 			congestion = 0 
 			node_level = 0
-			for n in range(1, 8):
+			for n in range(0, 8):
 				congestion +=  len(self.nodes[n].incoming)
 			self.level_congestion[node_level] = congestion
 
@@ -1108,15 +1227,31 @@ class Network(object):
 		for i in range(0,size):
 			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
 			requester_id = self.get_random_leaf_machine()
-			self.send_packet('request',content_name,0,requester_id,0)
+			self.send_packet('request',content_name,-1,requester_id,0)
+
+	def ip_packet_generator(self,size):
+		logging.debug('packet_generator called, starting...')
+		for i in range(0,size):
+			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
+			requester_id = self.get_random_leaf_machine()
+			self.send_packet('request',content_name, requester_id ,requester_id,0)
+
 
 	def standard_traffic(self):
 		logging.debug('standard_traffic called, begginging packet_generator')
-		self.packet_generator(500)
+		self.packet_generator(500) # This can be changed to suiting 
+
+	def ip_standard_traffic(self):
+		logging.debug('standard_traffic called, begginging packet_generator')
+		self.ip_packet_generator(500) # This can be changed to suiting 
 	
-	def warm_up(self,warm_up_seconds):
-		self.sched.start()
+	def run_simulator(self, warm_up_seconds, loop_seconds):
 		self.sched.add_interval_job(self.standard_traffic,seconds=1)
+		self.sched.start()
+		self.warm_up(warm_up_seconds)
+		self.event_loop(loop_seconds)
+
+	def warm_up(self,warm_up_seconds):
 		logging.debug('phase 1 packet_generator completem, begging sched and warm_up')
 		start = time.time()
 		end = time.time()
@@ -1125,10 +1260,10 @@ class Network(object):
 			self.loop_step()
 			end=time.time()
 			#self.packet_generator(50)
-		self.simulator(20)
 
-	def simulator(self, seconds):
+	def event_loop(self, seconds):
 		self.sched.add_interval_job(self.log_level_congestion, seconds=2)
+		self.sched.add_interval_job(self.log_rt_times, seconds=2)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -1139,7 +1274,7 @@ class Network(object):
 			end = time.time()
 		self.sched.shutdown()
 		self.write_level_congestions()
-		
+		self.write_rtt_means()
 
 	def log_level_congestion(self):
 		self.total_congestions.append(copy.deepcopy(self.level_congestion))
@@ -1152,16 +1287,23 @@ class Network(object):
 				string += str(value) + ','
 			level_file.write(string.strip(',') + "\n")
 
-	def write_average_rtt(self):
-		for item in self.rtt_slices:
-			open("rtt.csv","a").write(str(item) + ' ')
+	def log_rt_times(self):
+		self.rtt_means.append(int(sum(self.rt_times)/len(self.rt_times)))
+		self.rt_times = []
+
+
+	def write_rtt_means(self):
+		rtt_file = open("rtt.csv","a")
+		for mean in self.rtt_means:
+			rtt_file.write(str(mean) + "\n")
 
 
 
 
 
-	## Utility functions for network accessability 
 
+
+	## Utility Functions for Network Accessability 
 	def get_other_leaf_machine(self,node_id):
 		x = node_id
 		while x == node_id:
@@ -1191,10 +1333,10 @@ class Network(object):
 	
 	def get_parent(self, node_id):   
 		n = node_id
-		if n == 1: 
-			return 0
+		if n == 0: 
+			return -1
 		if (n <= 7):
-			return 1 
+			return 0 
 		elif (n%7 == 1):
 			return (n/7)
 		else:

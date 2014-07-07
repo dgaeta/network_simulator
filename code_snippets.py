@@ -3,9 +3,9 @@
 ##
 
 from Simulator import *
-network=Network(3,False)
+network=Network(4,False)
 network.prepare()
-network.warm_up(10)
+network.run_simulator(20,20)
 
 
 network.send_packet('request','10466',0,1345, 0)
@@ -37,3 +37,9 @@ def timer():
 test_file = open("test.csv","a")
 	for i in range(0,4
 			test_file.write(str(i) + "\n")
+
+
+
+
+from Simulator import *
+network=Network(3,True)

@@ -22,7 +22,10 @@ class Packet(object):
 	 		self.content_data = 'None'				
 	  	self.type = _type	
 	  	self.dest_id = dest_id
-	  	self.lifetime= 10 #represent milliseconds, 10 ms for packetization
+	  	if requester_id == -1:
+	  		self.lifetime= 50 # 50ms latency between client and router
+	  	else:
+	  		self.lifetime=10 # 10ms for packetization
 
 	def __str__(self):
 		return "type: " + self.type + " -- content_name: " + self.content_name + " -- requester_id: " + str(self.requester_id) + " -- dest_id: " + str(self.dest_id) + " -- lifetime: " + str(self.lifetime) + " -- content_data: " + self.content_data
