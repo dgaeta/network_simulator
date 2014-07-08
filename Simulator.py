@@ -476,7 +476,7 @@ class NB_Network(object):
 		color_width = self.get_color(0)
 		canvas_id = self.canvas.create_circle(self.x_origin, self.y_origin , self.radius*3, outline = color_width['color'], width = color_width['width'])
 		self.nodes[0].canvas_id = canvas_id
-		self._zoom(self.levels, 0, self.radius, self.x_origin, self.y_origin)
+		self._zoom(self.levels-1, 0, self.radius, self.x_origin, self.y_origin)
 		bounds = self.canvas.bbox('all')  # returns a tuple like (x1, y1, x2, y2)
 		width = bounds[2] - bounds[0]
 		height = bounds[3] - bounds[1]
@@ -748,8 +748,7 @@ class NB_Network(object):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				#inself.nodes[node_id].total_load -= packet['size']
-				pack = str(packet)
-				logging.debug(" packet data: %s", pack) 
+				logging.debug(" packet data: %s", str(packet)) 
 				
 				#Update the color now that we popped an incoming packet
 				""" TODO: UNCOMMENT IF USING GUI"""
@@ -810,7 +809,7 @@ class NB_Network(object):
 					if ((-1 in self.nodes[node_id].pending_table[content_name]) and (len(self.nodes[node_id].pending_table[content_name])==1)):
 						#nowself.root.after_idle(self.single_RRT_average)
 						logging.debug(" DONE! I am the source: %d" % node_id)
-						self.nodes[node_id].content_store[content_name] = data
+						self.nodes[node_id].cache_content(content_name,data)
 						logging.debug(" Added content (%s) to content store"  % content_name)
 						del self.nodes[node_id].pending_table[content_name]
 						logging.debug(" Deleted content (%s) from PT"  % content_name)
@@ -1021,39 +1020,39 @@ class NB_Network(object):
 					# Case 1: content in cache
 					if packet.content_name in self.nodes[node_id].content_store:
 
-						if packet.requester_id == -1: # -1 signifies it is the source of the request
+						if packet.origin_id == -1: # -1 signifies it is the source of the request
 						# Case where active request hasnt been created yet but content in cache
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							packet.lifetime += 20
 							self.rt_times.append(packet.lifetime)
 						else:
-							self.send_packet('response', packet.content_name,  node_id, packet.requester_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
+							self.send_packet('response', packet.content_name,  node_id, packet.origin_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
 							logging.debug(" content %s already in cache", packet.content_name) 
-							logging.debug(" sent content back to  %d ", packet.requester_id)
+							logging.debug(" sent content back to  %d ", packet.origin_id)
 							
 					# Case 2: duplicate request exists
 					elif packet.content_name in self.nodes[node_id].pending_table:   
 
-						self.nodes[node_id].pending_table[packet.content_name] += [packet.requester_id]
+						self.nodes[node_id].pending_table[packet.content_name] += [packet.origin_id]
 						#logging.debug(" duplicate request for content %s , added requester_id %d to PT", packet[content_name], packet[requester_id]) 
-						logging.debug(" duplicate request for content , added requester_id %d to PT", packet.requester_id) 
+						logging.debug(" duplicate request for content , added requester_id %d to PT", packet.origin_id) 
 					
 						
 					# Case 3: no pending request, but location lives in children, create entry in PT, send request to child
 					elif packet.content_name in self.nodes[node_id].forwarding_table:
 
 						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name]   #direction of child where destination node is contained 
-						self.nodes[node_id].pending_table[packet.content_name] = [packet.requester_id]          # entry in PT created
+						self.nodes[node_id].pending_table[packet.content_name] = [packet.origin_id]          # entry in PT created
 						self.send_packet( 'request', packet.content_name ,node_id, directed_child_id, packet.lifetime)
-						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.requester_id) 
+						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.origin_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
 
 					# Case 4: no duplicate, add to PT, forward to parent 
 					else:
-						self.nodes[node_id].pending_table[packet.content_name] = [packet.requester_id]
+						self.nodes[node_id].pending_table[packet.content_name] = [packet.origin_id]
 						parent_id = self.get_parent(node_id)
 						self.send_packet('request', packet.content_name, node_id, parent_id, packet.lifetime )
-						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.requester_id, parent_id) 
+						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.origin_id, parent_id) 
 					 
 
 				elif packet.type == 'response':
@@ -1063,7 +1062,7 @@ class NB_Network(object):
 					if ((-1 in self.nodes[node_id].pending_table[packet.content_name]) and (len(self.nodes[node_id].pending_table[packet.content_name])==1)):
 						self.rt_times.append(packet.lifetime)
 						logging.debug(" DONE! I am the source: %d" % node_id)
-						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 						logging.debug(" Added content (%s) to content store"  % packet.content_name)
 						del self.nodes[node_id].pending_table[packet.content_name]
 						logging.debug(" Deleted content (%s) from PT"  % packet.content_name)
@@ -1083,7 +1082,7 @@ class NB_Network(object):
 
 						del self.nodes[node_id].pending_table[packet.content_name]
 						logging.debug(" Deleted content (%s) from PT"  % packet.content_name)
-						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 						logging.debug(" Added content (%s) to content store"  % packet.content_name)
 
 				
@@ -1312,8 +1311,7 @@ class IP_Network(object):
 		self.content_names = []
 		self.regions = []
 		self.total_round_trip_times = []
-		self.rt_times = []
-		self.rtt_means = []
+
 		self.level_congestion = {0:0, 1:0, 2:0, 3:0}
 		self.total_congestions = []
 		self.packets_to_be_delivered = []
@@ -1989,15 +1987,15 @@ class IP_Network(object):
 					# Case 1: content in cache
 					if packet.content_name in self.nodes[node_id].content_store:
 
-						if packet.requester_id == node_id: # I am the source
+						if packet.origin_id == node_id: # I am the source
 						# Case where active request hasnt been created yet but content in cache
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							packet.lifetime += 20
 							self.rt_times.append(packet.lifetime)
 						else:
-							self.send_packet('response', packet.content_name,  node_id, packet.requester_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
+							self.send_packet('response', packet.content_name,  node_id, packet.origin_id, packet.lifetime, self.nodes[node_id].content_store[packet.content_name])
 							logging.debug(" content %s already in cache", packet.content_name) 
-							logging.debug(" sent content back to  %d ", packet.requester_id)
+							logging.debug(" sent content back to  %d ", packet.origin_id)
 							
 
 					# Case 2: location of content lives in children, forward request to child
@@ -2011,17 +2009,17 @@ class IP_Network(object):
 					else:
 						parent_id = self.get_parent(node_id)
 						self.send_packet('request', packet.content_name, node_id, parent_id, packet.lifetime )
-						logging.debug(" content %s NOT known sent request to parent %d", packet.content_name, packet.requester_id, parent_id) 
+						logging.debug(" content %s NOT known sent request to parent %d", packet.content_name, packet.origin_id, parent_id) 
 					 
 
 				elif packet.type == 'response':
 					# packet is a response
 
 					# Case 1: node is source of request
-					if (node_id == packet.requester_id):
+					if (node_id == packet.origin_id):
 						self.ip_rt_times.append(packet.lifetime)
 						logging.debug(" DONE! I am the source: %d" % node_id)
-						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 						logging.debug(" Added content (%s) to content store"  % packet.content_name)
 						
 					# Case 2: node was a middle man
@@ -2032,7 +2030,7 @@ class IP_Network(object):
 						logging.debug("Sent response to requester %d ", packet.dest_id)
 						logging.debug("Forwarding to requester complete")
 
-						self.nodes[node_id].content_store[packet.content_name] = packet.content_data
+						self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 						logging.debug(" Added content (%s) to content store"  % packet.content_name)
 
 				
@@ -2232,13 +2230,11 @@ class IP_Network(object):
 		i = 0 
 		while i < comp_power:
 			# add time of computation to packet lifetime
-			process_start_time = time.time()
-
 			if (not is_empty(self.nodes[node_id].incoming)):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
-				process_start_time = time.time()
+				#process_start_time = time.time()
 
 				if packet.type == 'request':   
 					  
@@ -2249,7 +2245,7 @@ class IP_Network(object):
 						# Case where active request hasnt been created yet but content in cache
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							packet.lifetime += 20
-							self.rt_times.append(packet.lifetime)
+							self.ip_rt_times.append(packet.lifetime)
 						else:
 							# If region is contained below this node - then forward it down, else send up to parent
 							if self.region_contained(node_id, packet.origin_id):
@@ -2305,12 +2301,12 @@ class IP_Network(object):
 				else:
 					logging.warning(' Mislabeled Packet')
 
+
 				process_end_time = time.time()
 				total_processing_time = (process_end_time - process_start_time)/comp_power
 				for packet in self.nodes[node_id].incoming:
 					packet.lifetime += total_processing_time
 			i += 1
-
 
 	def send_packet(self, _type, content_name, from_id, dest_id, lifetime, *args):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
@@ -2413,14 +2409,14 @@ class IP_Network(object):
 			level_file.write(string.strip(',') + "\n")
 
 	def log_rt_times(self):
-		self.rtt_means.append(int(sum(self.rt_times)/len(self.rt_times)))
-		self.rt_times = []
+		self.ip_rtt_means.append(int(sum(self.ip_rt_times)/len(self.ip_rt_times)))
+		self.ip_rt_times = []
 
 
 	def write_rtt_means(self):
-		rtt_file = open("ip_rtt.csv","a")
-		for mean in self.rtt_means:
-			rtt_file.write(str(mean) + "\n")
+		ip_rtt_file = open("ip_rtt.csv","a")
+		for mean in self.ip_rtt_means:
+			ip_rtt_file.write(str(mean) + "\n")
 
 	def region_contained(self, high_node_id, low_node_id):
 		high_node = self.nodes[high_node_id]
