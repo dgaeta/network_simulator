@@ -1,8 +1,6 @@
 ##
-# Name Based Router
+# Name Based Router and IP Router
 # 
-#
-# author: Daniel Gaeta 
 # Name Based Routing Designed by: Armand Prieditis 
 ##
 
@@ -61,7 +59,6 @@ class NBRouter:
 
 class IPRouter:
 # Name based content facilitated server
-
   def __init__(self, _id, canvas_id, gui_boolean):
     self.id = _id
     self.incoming = deque()

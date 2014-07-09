@@ -1,8 +1,6 @@
 ##
 # Packet 
 # 
-#
-# author: Daniel Gaeta 
 # Name Based Routing Designed by: Armand Prieditis 
 ##
 
