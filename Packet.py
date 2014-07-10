@@ -20,10 +20,8 @@ class Packet(object):
 	 		self.content_data = 'None'				
 	  	self.type = _type	
 	  	self.dest_id = dest_id
-	  	if origin_id == -1:
-	  		self.lifetime= 50 # 50ms latency between client and router
-	  	else:
-	  		self.lifetime=10 # 10ms for packetization
+	  	self.ticks= 0 
+	  
 
 	def __str__(self):
-		return "type: " + self.type + " -- content_name: " + self.content_name + " -- origin_id: " + str(self.origin_id) + " -- dest_id: " + str(self.dest_id) + " -- lifetime: " + str(self.lifetime) + " -- content_data: " + self.content_data
+		return "type: " + self.type + " -- content_name: " + str(self.content_name) + " -- origin_id: " + str(self.origin_id) + " -- dest_id: " + str(self.dest_id) + " -- ticks: " + str(self.ticks) + " -- content_data: " + str(self.content_data)
