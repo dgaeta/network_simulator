@@ -149,7 +149,7 @@ class NB_Network(object):
 		self.label = tk.Label(
 			self.frame, text="Machine Load", image=photo, anchor='w', justify='left', compound=tk.BOTTOM)
 		self.label.photo = photo
-		self.label.grid(row=0,column=7, columnspan=4)
+		self.label.grid(row=0,column=8, columnspan=4)
 
 		# delay in seconds of animation
 		self.delay_scale = tk.Scale(
@@ -183,22 +183,22 @@ class NB_Network(object):
 
 		# zoom in
 		self.zoom_button = tk.Button(
-			self.frame, text="ZOOM +", command=lambda: self.zoom('in'))
-		self.zoom_button.grid(row=0,column=5, sticky='n')
+			self.frame, text="+", command=lambda: self.zoom('in'))
+		self.zoom_button.grid(row=0,column=5)
 
 		# zoom out 
 		self.zoom_button = tk.Button(
-			self.frame, text="ZOOM -", command=lambda: self.zoom('out'))
-		self.zoom_button.grid(row=0,column=5, sticky='s')
+			self.frame, text="-", command=lambda: self.zoom('out'))
+		self.zoom_button.grid(row=0,column=6)
 		
 		self.entry1 = tk.Entry(
 			self.frame, textvariable=self.command_entry)
 		self.entry1.insert(0, "Enter Command")
-		self.entry1.grid(row=0,column=6, sticky='n')
+		self.entry1.grid(row=0,column=7, sticky='n')
 
 		self.highlight_button = tk.Button(
 			self.frame, text="Enter", width=10, command=lambda: self.command_line())
-		self.highlight_button.grid(row=0,column=6,sticky='s')
+		self.highlight_button.grid(row=0,column=7,sticky='s')
 
 	
 		## Enqueue the build into the mainloop
@@ -209,7 +209,6 @@ class NB_Network(object):
 		self.frame.update_idletasks()
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
 		self.root.after_idle(self.prepare)
-		self.root.after_idle(self.animation)
 		self.root.mainloop()
 		
 	
@@ -350,12 +349,18 @@ class NB_Network(object):
 
 	def show_request(self):
 		node_id = 2200
+		self.canvas.itemconfig(self.nodes[2200].canvas_id, outline='green', width=2.0)
 		content_name = '10454'
+		dest_id = 0
+		self.canvas.itemconfig(self.nodes[520].canvas_id, outline='purple', width=2.0)
+
 		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':-1, '_type': 'request', 'size': 1})
 		color_dict = self.get_color(node_id)
 		canvas_id = self.nodes[node_id].canvas_id
 		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
-		self.canvas.update()
+		self.canvas.update_idletasks()
+		self.root.after(self.delay,self.animation)
+
 		
 	def round_trip_time(self):
 		logging.debug('Initializing RTT test:')
@@ -430,7 +435,7 @@ class NB_Network(object):
 		else:
 			self.radius *= .8
 			self.zoom_level -= 1
-		self.pause()
+		#self.pause()
 		self.canvas.delete('all')
 
 		color_width = self.get_color(0)
@@ -441,8 +446,9 @@ class NB_Network(object):
 		width = bounds[2] - bounds[0]
 		height = bounds[3] - bounds[1]
 		self.canvas.config(scrollregion=self.canvas.bbox("all"))
-		self.canvas.update()
-		self.play()
+		self.canvas.update_idletasks()
+		#self.play()
+		print "delay is " + str(self.delay)
 
 	def _zoom(self, level,i,r,x,y):  # Recursive Helper
 		""" Helper function for build() """
@@ -680,7 +686,9 @@ class NB_Network(object):
 
 	def enqueue_to_incoming(self, node_id, packet):
 		#self.nodes[node_id].total_load += packet['size']
+		
 		self.nodes[node_id].incoming.append(packet)
+			
 		color_dict = self.get_color(node_id)
 		canvas_id = self.nodes[node_id].canvas_id
 		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
@@ -701,7 +709,7 @@ class NB_Network(object):
 		#i = 0
 		#while i < iterations:
 		#	i += 1
-		comp_power = self.computation_power(node_id)
+		comp_power = self.get_computation_power(node_id)
 		i = 0 
 		while i < comp_power:
 			if (not is_empty(self.nodes[node_id].incoming)):
@@ -726,6 +734,7 @@ class NB_Network(object):
 					if content_name in self.nodes[node_id].content_store:
 						if requester_id == -1: ##  -1 signifies it is the source of the request
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
+							self.canvas.itemconfig(self.nodes[520].canvas_id, outline='grey', width=1.0)
 							# Case where active request hasnt been created yet but content in cache
 				
 						else:
@@ -804,7 +813,8 @@ class NB_Network(object):
 					color_dict = self.get_color(node_id)
 					self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 					self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline=color_dict['color'], width=color_dict['width'])
-					
+
+
 			i += 1
 
 
@@ -1234,28 +1244,55 @@ class NB_Network(object):
 		size = self.nodes[node_id].total_load()
 		#for key in self.nodes[node_id].pending_table:     #account for size of awaiting requests
 		#	size += len(self.nodes[node_id].pending_table[key])
+		if len(self.nodes[node_id].incoming) > 0:
+			packet = self.nodes[node_id].incoming[0]
+			if packet['_type'] == 'response':
+				return {'color':'purple', 'width':2.0}
+
+		if node_id == 2200 and len(self.nodes[node_id].incoming) == 0:
+			return {'color':'green', 'width':2.0}
 
 		if node_id <= 8:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
-			elif size < 100:
+			elif size < 20:
 				return {'color':'blue', 'width':2.0}
-			elif size < 200:
+			elif size < 30:
+				return {'color':'deep sky blue', 'width':2.0}
+			elif size < 40:
+				return {'color':'cyan', 'width':2.0}
+			elif size < 50:
+				return {'color':'green', 'width':2.0}
+			elif size < 60:
+				return {'color':'yellow', 'width':2.0}
+			elif size < 70:
+				return {'color':'orange', 'width':2.0}
+			elif size < 80:
 				return {'color':'dark orange', 'width':2.0}
-			elif size < 300:
-				return {'color':'red', 'width':2.0}
+			elif size < 90:
+				return {'color':'orange red', 'width':2.0}
 			else: 
 				return {'color':'red', 'width':2.0}
 
 		else:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
-			elif size < 10:
+			elif size < 5:
 				return {'color':'blue', 'width':2.0}
-			elif size < 75:
+			elif size < 10:
+				return {'color':'deep sky blue', 'width':2.0}
+			elif size < 15:
+				return {'color':'cyan', 'width':2.0}
+			elif size < 20:
+				return {'color':'green', 'width':2.0}
+			elif size < 25:
+				return {'color':'yellow', 'width':2.0}
+			elif size < 30:
+				return {'color':'orange', 'width':2.0}
+			elif size < 35:
 				return {'color':'dark orange', 'width':2.0}
-			elif size < 101:
-				return {'color':'red', 'width':2.0}
+			elif size < 40:
+				return {'color':'orange red', 'width':2.0}
 			else: 
 				return {'color':'red', 'width':2.0}
 	
