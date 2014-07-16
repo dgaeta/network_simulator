@@ -82,11 +82,13 @@ class NB_Network(object):
 		self.regions = []
 		self.rt_tick_times = []
 		self.rt_tick_means = []
-		self.level_congestion = {0:0, 1:0, 2:0, 3:0}
+		self.level_congestion = {0:0, 1:0, 2:0, 3:0, 4:0}
 		self.total_congestions = []
 		self.packets_to_be_delivered = []
 		self.packets_delivered_count = 0 
 		self.packets_delivered_slices = []
+		self.rt_ticks_by_level = {0:[], 1:[], 2:[], 3:[], 4:[]}
+		self.total_rt_by_levels = []
 
 		self.gui_boolean = gui_boolean
 		if self.gui_boolean:
@@ -104,7 +106,7 @@ class NB_Network(object):
 			self.initialize_gui()
 			self.command_entry = ''
 		else:
-			self.packet_frequency = 0 
+			self.packet_frequency = 300 
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		
@@ -944,6 +946,8 @@ class NB_Network(object):
 			for packet_list in self.nodes[node_id].pending_table.itervalues():
 				for p in packet_list:
 					p.ticks += 1 
+			#for content_name,ticks in self.nodes[node_id].local_tick_count.iteritems():
+			#		self.nodes[node_id].local_tick_count[content_name] += 1
 
 		for n in range(0, len(self.nodes)):
 			self.process_without_gui(n) 
@@ -976,9 +980,9 @@ class NB_Network(object):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
 		# Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
 		if args:
-			pack = Packet(_type, str(content_name), from_id,  dest_id, args[0])
+			pack = Packet(0, _type, str(content_name), from_id,  dest_id, args[0])
 		else:
-			pack = Packet(_type, str(content_name), from_id,  dest_id)
+			pack = Packet(0, _type, str(content_name), from_id,  dest_id)
 		if pack:
 			pack.ticks += (1 + ticks) # Latency in delivering a packet
 		if self:
@@ -1048,6 +1052,7 @@ class NB_Network(object):
 		self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_rt_ticks, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
+		self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -1060,10 +1065,13 @@ class NB_Network(object):
 		self.write_level_congestions()
 		self.write_rt_tick_means()
 		self.write_packets_delivered()
+		self.write_rt_by_level()
 
 
 	def log_level_congestion(self):
 		self.total_congestions.append(copy.deepcopy(self.level_congestion))
+		for key in self.level_congestion:
+			self.level_congestion[key] = 0 
 
 	def write_level_congestions(self):
 		level_file = open("level_congestion.csv","a")
@@ -1136,6 +1144,9 @@ class NB_Network(object):
 						self.send_packet( 'request', packet.content_name ,node_id, directed_child_id, packet.ticks)
 						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.origin_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
+						""" account for local ticks"""
+						if node_id == 0:
+							self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 					# Case 4: no duplicate, add to PT, forward to parent 
 					else:
@@ -1143,7 +1154,8 @@ class NB_Network(object):
 						parent_id = self.get_parent(node_id)
 						self.send_packet('request', packet.content_name, node_id, parent_id, packet.ticks )
 						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.origin_id, parent_id) 
-					 
+					 	""" account for local ticks"""
+						self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 				elif packet.type == 'response':
 					# packet is a response
@@ -1157,6 +1169,8 @@ class NB_Network(object):
 							self.rt_tick_times.append(min([pack.ticks,packet.ticks]))
 							self.packets_delivered_count += 1
 							logging.debug(" DONE! I am the source: %d" % node_id)
+
+							
 						# Case 2: node was a middle man
 						else:
 							# Forward packet back to where the packet originated
@@ -1169,20 +1183,38 @@ class NB_Network(object):
 					logging.debug(" Added content (%s) to content store"  % packet.content_name)
 					del self.nodes[node_id].pending_table[packet.content_name]
 					logging.debug(" Deleted content (%s) from PT"  % packet.content_name)
-					
+					try:
+						level = get_level(node_id)
+						rt_ticks = (packet.ticks - self.nodes[node_id].local_tick_count[packet.content_name])
+						self.rt_ticks_by_level[level].append(rt_ticks)
+						del self.nodes[node_id].local_tick_count[packet.content_name]
+					except KeyError: 
+						pass
 					
 				else:
 					logging.warning(' Mislabeled Packet')
 
-				for packet in self.nodes[node_id].incoming:
-					packet.ticks += 1
+				
 			i += 1
+		for packet in self.nodes[node_id].incoming:
+					packet.ticks += 1
+
+	def log_rt_by_level(self):
+		arr = []
+		for key in self.rt_ticks_by_level:
+			arr.append(int(sum(self.rt_ticks_by_level[key])/len(self.rt_ticks_by_level[key])))
+		self.total_rt_by_levels.append(copy.deepcopy(arr))
+		for key in self.rt_ticks_by_level:
+			self.rt_ticks_by_levels[key] = []
 
 
-
-
-
-
+	def write_rt_by_level(self):
+		rt_level_file = open("rt_by_level.csv","a")
+		for interval in self.total_rt_by_levels:
+			string = ''
+			for val in interval:
+				string += str(val) + ','
+			rt_level_file.write(string.strip(',') + "\n")
 
 
 

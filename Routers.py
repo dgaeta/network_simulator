@@ -22,6 +22,7 @@ class NBRouter:
     self.cache_slots = []
     self.content_store = {}
     self.pending_table = {}
+    self.local_tick_count = {}
     self.region_num = int()
     if gui_boolean:
         self.canvas_id = canvas_id
@@ -68,6 +69,7 @@ class IPRouter:
     self.content_store = {}
     self.cache_slots = []
     self.contained_regions = {}
+    self.local_tick_count = {}
     self.region_num = int()
     if gui_boolean:
         self.canvas_id = canvas_id

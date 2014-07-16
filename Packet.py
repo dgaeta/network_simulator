@@ -6,12 +6,17 @@
 
 import logging
 import time
+import uuid
 logging.getLogger().setLevel(logging.DEBUG)
 
 class Packet(object):
 	"""docstring for Packet"""
-	def __init__(self, _type, content_name, origin_id, dest_id,  *args):
+	def __init__(self, id, _type, content_name, origin_id, dest_id, *args):
 		super(Packet, self).__init__()
+		if id == 0:
+			self.id = str(uuid.uuid4())
+		else:
+			self.id = id
 		self.content_name = content_name
 	 	self.origin_id = origin_id   
 	 	if args:         				
