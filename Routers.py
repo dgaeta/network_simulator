@@ -19,6 +19,7 @@ class NBRouter:
     self.responses = deque()
     self.color = ''
     self.forwarding_table = {}
+    self.cache_max = 0
     self.cache_slots = []
     self.content_store = {}
     self.pending_table = {}
@@ -31,7 +32,7 @@ class NBRouter:
     return len(self.incoming) 
 
   def cache_content(self, content_name, content_data):
-    if len(self.cache_slots) < 20:  # Cache slots
+    if len(self.cache_slots) < self.cache_max:  # Cache slots
       self.cache_slots.append(content_name)
       self.content_store[content_name] = content_data
     else:

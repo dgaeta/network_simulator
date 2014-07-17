@@ -66,8 +66,16 @@ class AutoScrollbar(tk.Scrollbar):
     def place(self, **kw):
         raise TclError, "cannot use place with this widget"
 
+def get_lower_lim(levels):
+	lower_sum = 0 
+	i = 0 
+	while i < levels :
+		lower_sum += (7**i)
+		i += 1 
+	return lower_sum
 
-
+def get_upper_lim(levels):
+	return ((7**levels) + get_lower_lim(levels)) -1
 
 
 class NB_Network(object):
@@ -76,8 +84,8 @@ class NB_Network(object):
 		# data structs for the network, core data structures
 		self.nodes = {}
 		self.levels = levels
-		self.lower_lim = 400
-		self.upper_lim = ((7**(levels))-3)
+		self.lower_lim = get_lower_lim(levels)
+		self.upper_lim = get_upper_lim(levels)
 		self.content_names = []
 		self.regions = []
 		self.rt_tick_times = []
@@ -109,6 +117,8 @@ class NB_Network(object):
 			self.packet_frequency = 300 
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
+		self.set_up_cache()
+		self.prepare()
 		
 		
 	## Buttons and Sliders
@@ -304,20 +314,6 @@ class NB_Network(object):
 				self.canvas.itemconfig(self.nodes[self.get_actual_node(region[i])].canvas_id, outline='grey', width=1.0)
 				self.canvas.update_idletasks()
 
-	def test_regions(self):
-		for region in self.regions:
-			print region
-			for i in region:
-				print i
-				self.canvas.itemconfig(self.nodes[i].canvas_id, outline='purple', width=2.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(i)].canvas_id, outline='purple', width=2.0)
-				self.canvas.update()
-			sleep(self.delay/1000)
-			for i in range(1,7):
-				self.canvas.itemconfig(self.nodes[i].canvas_id, outline='grey', width=1.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(i)].canvas_id, outline='grey', width=1.0)
-				self.canvas.update()
-
 	def show_publish(self):
 		source_id = 1000
 		content_name = 'espn.com/usa-world-cup-winner'
@@ -363,22 +359,6 @@ class NB_Network(object):
 		self.canvas.update_idletasks()
 		self.root.after(self.delay,self.animation)
 
-		
-	def round_trip_time(self):
-		logging.debug('Initializing RTT test:')
-		#if method=='random':
-		#	logging.debug('Starting random content test:')
-		#	pass
-		#elif method=='no cache':
-		logging.debug('Starting no cached content test:')
-		for index in range(0,50):
-			name = self.content_names[index]
-			requester_id = self.get_random_leaf_machine()
-			time_start = time.clock()
-			packet = {'content_name':name, '_type':'request', 'from_id':0, 'time_start':time_start, 'size':1 }
-			self.enqueue_to_incoming(requester_id, packet )
-			logging.debug('Content name: %s -- Requester ID: %d -- Packet %s', name, requester_id, str(packet))
-
 	def DDoS(self):
 		DDoS_region = self.regions[random.randint(0,len(self.regions)-1)]
 		content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
@@ -420,15 +400,6 @@ class NB_Network(object):
 		else:
 			self.delay = val * 1000
 		#print self.delay
-
-	def test_nums(self):
-		""" Displays whether nodes where numbered correctly """
-		for i in range(1,100):
-			print i
-			self.canvas.itemconfig(self.nodes[i].canvas_id, outline='yellow', width=2.0)
-			self.canvas.update_idletasks()
-			self.canvas.itemconfig(self.nodes[i].canvas_id, outline='grey', width=1.0)
-			self.canvas.update_idletasks()
 
 	def zoom(self, method):  # Used for both zooming in and out
 		if method == 'in':
@@ -553,6 +524,7 @@ class NB_Network(object):
 
 
 
+
 	## Simulator Functionality for GUI
 	def animation(self):
 		if self.simulation_state.get() == 'PLAYING':
@@ -653,19 +625,10 @@ class NB_Network(object):
 				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+7] = NBRouter(7*i+7, canvas_id, self.gui_boolean)
 
-	## Debugging functions
-	def in_transit(self): # Used for debugging
-		logging.debug(' packets in transit: %s', str(self.in_transit_packets))
-
 	def _create_circle(self, x, y, r, **kwargs):
 		"""implementation for creating a circle in Tk"""
 		return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
 	tk.Canvas.create_circle = _create_circle
-
-	def status(self):
-		print str(self.in_transit_packets)
-		for n in self.nodes:
-			print str(self.nodes[n].incoming)
 
 	def deliver_in_transit_packets(self):
 		if( not is_empty(self.in_transit_packets)):
@@ -702,15 +665,6 @@ class NB_Network(object):
 		#self.deliver_in_transit_packets()
 
 	def process(self, node_id):
-		#logging.debug(' processing incoming packet at %d' % node_id)
-		## Non leaf nodes run twice as fast 
-		#if node_id < 343:
-		#	iterations = 2
-		#else:
-		#	iterations = 1
-		#i = 0
-		#while i < iterations:
-		#	i += 1
 		comp_power = self.get_computation_power(node_id)
 		i = 0 
 		while i < comp_power:
@@ -824,11 +778,12 @@ class NB_Network(object):
 
 
 
+
+
 	## Functionality for DES			
 	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
 		self.nodes[0] = NBRouter(0, 0, self.gui_boolean)
 		self._build_without_gui(levels-1, 0)
-
 	
 	def _build_without_gui(self, level,i):  # Recursive helper
 		""" Helper function for build() """
@@ -895,16 +850,33 @@ class NB_Network(object):
 				#southwest
 				self.nodes[7*i+7] = Routers.NBRouter(7*i+7, 0, self.gui_boolean)
 
+	def set_up_cache(self):
+		for node_id in self.nodes:
+			level = get_level(node_id)
+			if level == 0:
+				self.nodes[node_id].cache_max = 200
+			elif level == 1:
+				self.nodes[node_id].cache_max = 150
+			elif level == 2:
+				self.nodes[node_id].cache_max = 60
+			elif level == 3:
+				self.nodes[node_id].cache_max = 40
+			elif level == 4:
+				self.nodes[node_id].cache_max = 20
+			else:
+				logging.warning('Error: Incorrect level signifier')
+		
 	def prepare(self):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = 2790
-		while (leaf_id > 450):
-			content_name = str(content_index)
-			self.publish_content(content_name, content_name, leaf_id)
-			self.content_names.append(content_name)
-			content_index +=1
-			leaf_id -= 5
+		leaf_id = 2800
+		while (leaf_id > 401):
+			for i in range(0,4):
+				content_name = str(content_index)
+				self.publish_content(content_name, content_name, leaf_id)
+				self.content_names.append(content_name)
+				content_index +=1
+			leaf_id -= 1
 		logging.debug('  Publishing complete. avail content_names are %d through %d ', int(self.content_names[0]), 
 			int(self.content_names[(len(self.content_names) -1)]))
 		#self.simulation_state.set("PLAYING")
@@ -932,10 +904,12 @@ class NB_Network(object):
 			self.regions.append(region)
 
 	def get_computation_power(self, node_id):
-		if node_id <= 7:
-			return 5
+		if node_id == 0:
+			return 15
+		elif node_id <= 7:
+			return 10
 		elif node_id <= 56:
-			return 3
+			return 6
 		elif node_id <= 399:
 			return 2
 		else: 
@@ -946,8 +920,7 @@ class NB_Network(object):
 			for packet_list in self.nodes[node_id].pending_table.itervalues():
 				for p in packet_list:
 					p.ticks += 1 
-			#for content_name,ticks in self.nodes[node_id].local_tick_count.iteritems():
-			#		self.nodes[node_id].local_tick_count[content_name] += 1
+			
 
 		for n in range(0, len(self.nodes)):
 			self.process_without_gui(n) 
@@ -1067,39 +1040,6 @@ class NB_Network(object):
 		self.write_packets_delivered()
 		self.write_rt_by_level()
 
-
-	def log_level_congestion(self):
-		self.total_congestions.append(copy.deepcopy(self.level_congestion))
-		for key in self.level_congestion:
-			self.level_congestion[key] = 0 
-
-	def write_level_congestions(self):
-		level_file = open("level_congestion.csv","a")
-		for dic in self.total_congestions:
-			string = ''
-			for key, value in dic.iteritems():
-				string += str(value) + ','
-			level_file.write(string.strip(',') + "\n")
-
-	def log_rt_ticks(self):
-		self.rt_tick_means.append(int(sum(self.rt_tick_times)/len(self.rt_tick_times)))
-		self.rt_tick_times = []
-
-
-	def write_rt_tick_means(self):
-		rtt_file = open("rtt.csv","a")
-		for mean in self.rt_tick_means:
-			rtt_file.write(str(mean) + "\n")
-
-	def log_packets_delivered(self):
-		self.packets_delivered_slices.append(self.packets_delivered_count)
-		self.packets_delivered_count = 0
-
-	def write_packets_delivered(self):
-		packets_file = open("packets_delivered_slices.csv","a")
-		for packets_count in self.packets_delivered_slices:
-			packets_file.write(str(packets_count) + "\n")
-
 	def process_without_gui(self, node_id):
 		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
@@ -1145,7 +1085,7 @@ class NB_Network(object):
 						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.origin_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
 						""" account for local ticks"""
-						if node_id == 0:
+						if (node_id == 0) and (not packet.content_name in self.nodes[node_id].local_tick_count):
 							self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 					# Case 4: no duplicate, add to PT, forward to parent 
@@ -1155,7 +1095,8 @@ class NB_Network(object):
 						self.send_packet('request', packet.content_name, node_id, parent_id, packet.ticks )
 						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.origin_id, parent_id) 
 					 	""" account for local ticks"""
-						self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
+					 	if (not packet.content_name in self.nodes[node_id].local_tick_count):
+							self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 				elif packet.type == 'response':
 					# packet is a response
@@ -1199,6 +1140,46 @@ class NB_Network(object):
 		for packet in self.nodes[node_id].incoming:
 					packet.ticks += 1
 
+	
+
+
+
+
+
+	## Functions for logging and writing Network statistics
+
+	def log_level_congestion(self):
+		self.total_congestions.append(copy.deepcopy(self.level_congestion))
+		for key in self.level_congestion:
+			self.level_congestion[key] = 0 
+
+	def write_level_congestions(self):
+		level_file = open("level_congestion.csv","a")
+		for dic in self.total_congestions:
+			string = ''
+			for key, value in dic.iteritems():
+				string += str(value) + ','
+			level_file.write(string.strip(',') + "\n")
+
+	def log_rt_ticks(self):
+		self.rt_tick_means.append(int(sum(self.rt_tick_times)/len(self.rt_tick_times)))
+		self.rt_tick_times = []
+
+
+	def write_rt_tick_means(self):
+		rtt_file = open("rtt.csv","a")
+		for mean in self.rt_tick_means:
+			rtt_file.write(str(mean) + "\n")
+
+	def log_packets_delivered(self):
+		self.packets_delivered_slices.append(self.packets_delivered_count)
+		self.packets_delivered_count = 0
+
+	def write_packets_delivered(self):
+		packets_file = open("packets_delivered_slices.csv","a")
+		for packets_count in self.packets_delivered_slices:
+			packets_file.write(str(packets_count) + "\n")
+
 	def log_rt_by_level(self):
 		arr = []
 		for key in self.rt_ticks_by_level:
@@ -1215,6 +1196,9 @@ class NB_Network(object):
 			for val in interval:
 				string += str(val) + ','
 			rt_level_file.write(string.strip(',') + "\n")
+
+
+
 
 
 

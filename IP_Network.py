@@ -112,8 +112,9 @@ class IP_Network(object):
 			self.packet_frequency = 300
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
-		
-		
+		self.prepare()
+		self.assemble_regions()
+		self.set_up_cache()
 		
 	## Buttons and Sliders
 	def initialize_gui(self):
@@ -225,7 +226,7 @@ class IP_Network(object):
 
 
 	## Callback funcions for Buttons in GUI
-	def pressed(self, button): # Updates the display of simulator state 
+ 	def pressed(self, button):  # Updates the display of simulator state 
 		self.simulation_state.set(str(button))
 		self.frame.update()
 
@@ -255,7 +256,7 @@ class IP_Network(object):
 			self.show_publish()
 		elif args[0] == 'request':
 			self.show_request()
-		elif args[0] == 'DDoS':
+		elif args[0] == 'ddos':
 			self.DDoS()
 		else:
 			logging.debug("Invalid Command %s --- Options are: \n highlight {node id} \n publish \n request \n DDoS", str(self.command_entry.get()))
@@ -866,13 +867,14 @@ class IP_Network(object):
 	def prepare(self):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = 2790
-		while (leaf_id > 450):
-			content_name = str(content_index)
-			self.publish_content(content_name, content_name, leaf_id)
-			self.content_names.append(content_name)
-			content_index +=1
-			leaf_id -= 5
+		leaf_id = 2800
+		while (leaf_id > 401):
+			for i in range(0,4):
+				content_name = str(content_index)
+				self.publish_content(content_name, content_name, leaf_id)
+				self.content_names.append(content_name)
+				content_index +=1
+			leaf_id -= 1
 		logging.debug('  Publishing complete. avail content_names are %d through %d ', int(self.content_names[0]), 
 			int(self.content_names[(len(self.content_names) -1)]))
 		#self.simulation_state.set("PLAYING")
@@ -925,10 +927,12 @@ class IP_Network(object):
 		logging.debug('test PASSED')
 
 	def get_computation_power(self, node_id):
-		if node_id <= 7:
-			return 5
+		if node_id == 0:
+			return 15
+		elif node_id <= 7:
+			return 10
 		elif node_id <= 56:
-			return 3
+			return 6
 		elif node_id <= 399:
 			return 2
 		else: 
@@ -1205,6 +1209,22 @@ class IP_Network(object):
 
 
 	## Utility Functions for Network Accessability 
+	def set_up_cache(self):
+		for node_id in self.nodes:
+			level = get_level(node_id)
+			if level == 0:
+				self.nodes[node_id].cache_max = 200
+			elif level == 1:
+				self.nodes[node_id].cache_max = 150
+			elif level == 2:
+				self.nodes[node_id].cache_max = 60
+			elif level == 3:
+				self.nodes[node_id].cache_max = 40
+			elif level == 4:
+				self.nodes[node_id].cache_max = 20
+			else:
+				logging.warning('Error: Incorrect level signifier')
+
 	def loop(self):
 		self.deliver_packets()
 		self.loop_step()
@@ -1257,35 +1277,64 @@ class IP_Network(object):
 		parent_id = self.get_parent(node_id)
 		return [parent_id, get_actual_node(parent_id, self.levels)]
 	
+	
+
 	def get_color(self, node_id):
 		#size = len(self.nodes[node_id].incoming) #account for length of incoming
 		size = self.nodes[node_id].total_load()
 		#for key in self.nodes[node_id].pending_table:     #account for size of awaiting requests
 		#	size += len(self.nodes[node_id].pending_table[key])
+		if len(self.nodes[node_id].incoming) > 0:
+			packet = self.nodes[node_id].incoming[0]
+			if packet['_type'] == 'response':
+				return {'color':'purple', 'width':2.0}
+
+		if node_id == 2200 and len(self.nodes[node_id].incoming) == 0:
+			return {'color':'green', 'width':2.0}
 
 		if node_id <= 8:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
-			elif size < 100:
+			elif size < 20:
 				return {'color':'blue', 'width':2.0}
-			elif size < 200:
+			elif size < 30:
+				return {'color':'deep sky blue', 'width':2.0}
+			elif size < 40:
+				return {'color':'cyan', 'width':2.0}
+			elif size < 50:
+				return {'color':'green', 'width':2.0}
+			elif size < 60:
+				return {'color':'yellow', 'width':2.0}
+			elif size < 70:
+				return {'color':'orange', 'width':2.0}
+			elif size < 80:
 				return {'color':'dark orange', 'width':2.0}
-			elif size < 300:
-				return {'color':'red', 'width':2.0}
+			elif size < 90:
+				return {'color':'orange red', 'width':2.0}
 			else: 
 				return {'color':'red', 'width':2.0}
 
 		else:
 			if size <= 0:
 				return {'color':'grey', 'width':1.0}
-			elif size < 10:
+			elif size < 5:
 				return {'color':'blue', 'width':2.0}
-			elif size < 75:
+			elif size < 10:
+				return {'color':'deep sky blue', 'width':2.0}
+			elif size < 15:
+				return {'color':'cyan', 'width':2.0}
+			elif size < 20:
+				return {'color':'green', 'width':2.0}
+			elif size < 25:
+				return {'color':'yellow', 'width':2.0}
+			elif size < 30:
+				return {'color':'orange', 'width':2.0}
+			elif size < 35:
 				return {'color':'dark orange', 'width':2.0}
-			elif size < 101:
-				return {'color':'red', 'width':2.0}
+			elif size < 40:
+				return {'color':'orange red', 'width':2.0}
 			else: 
-				return {'color':'red', 'width':2.0}	
+				return {'color':'red', 'width':2.0}
 		
 
 	
