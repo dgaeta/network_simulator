@@ -674,7 +674,7 @@ class IP_Network(object):
 	def process(self, node_id):
 		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
-		comp_power = self.computation_power(node_id)
+		comp_power = self.get_computation_power(node_id)
 		i = 0 
 		while i < comp_power:
 			# add time of computation to packet lifetime
