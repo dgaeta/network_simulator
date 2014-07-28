@@ -19,6 +19,7 @@ from datetime import datetime
 from apscheduler.scheduler import Scheduler
 import atexit
 from Routers import *
+from multiprocessing import Pool
 
 logging.getLogger().setLevel(logging.DEBUG)
 
@@ -38,20 +39,6 @@ def is_empty( any_structure):
 		#print('Structure is empty.')
 		return True
 
-def get_level(node_id):
-	if node_id == 0:
-		return 0
-	elif node_id <=7:
-		return 1
-	elif node_id <= 56:
-		return 2
-	elif node_id <= 399:
-		return 3
-	elif node_id <= 2800:
-		return 4
-	else: 
-		logging.debug('Incorrect Node ID given at get_level')
-
 class AutoScrollbar(tk.Scrollbar):
     # a scrollbar that hides itself if it's not needed.  only
     # works if you use the grid geometry manager.
@@ -68,8 +55,67 @@ class AutoScrollbar(tk.Scrollbar):
         raise TclError, "cannot use place with this widget"
 
 
+def set_tick_ds(levels):
+	dictionary = {}
+	for i in range(0,levels+1):
+		dictionary[i] = []
+	return dictionary
+
+def set_congestion_ds(levels):
+	dictionary = {}
+	for i in range(0,levels+1):
+		dictionary[i] = 0
+	return dictionary
+
+def set_lower_lim(levels):
+	total = 0 
+	for i in range(0,levels):
+		total += (7**i)
+	return total
+
+def set_upper_lim(levels):
+	total = 0 
+	for i in range(0,levels+1):
+		total += (7**i)
+	return total - 1
 
 
+def set_level_ranges(levels, upper_lim):
+	dictionary={}
+	dictionary[0] = [0]
+	total = 0
+
+
+	for i in range(1,levels+1):
+		old_total = total +1
+		total += 7**i
+		dictionary[i] = [old_total, total]
+	
+	node_dict = {}
+	node_dict[0] = 0
+	for node_id in range(1, upper_lim + 1):
+		for i in range(1, levels+1):
+			if node_id >= dictionary[i][0] and node_id <= dictionary[i][1]:
+				node_dict[node_id] = i
+
+	return node_dict
+
+
+def set_computation_ds(levels):
+	dictionary = {}
+	power = -4
+	for i in reversed(range(0,levels+1)):
+		power += 5
+		dictionary[i] = power
+	return dictionary
+
+def set_cache_ds(levels):
+	dictionary = {}
+	slots = 20
+	for i in reversed(range(0,levels+1)):
+		#slots += 20
+		dictionary[i] = slots
+	return dictionary
 
 class IP_Network(object):
 	def __init__( self, levels, gui_boolean):
@@ -77,20 +123,24 @@ class IP_Network(object):
 		# data structs for the network, core data structures
 		self.nodes = {}
 		self.levels = levels
-		self.lower_lim = 400
-		self.upper_lim = ((7**(levels))-3)
+		self.lower_lim = set_lower_lim(levels)
+		self.upper_lim = set_upper_lim(levels)
 		self.content_names = []
 		self.regions = []
+		self.level_ranges_dict = set_level_ranges(levels, self.upper_lim) 
 
-		self.level_congestion = {0:0, 1:0, 2:0, 3:0, 4:0}
+		self.level_congestion = set_congestion_ds(levels)
 		self.total_congestions = []
 		self.packets_to_be_delivered = []
 		self.ip_rt_tick_times = []
 		self.ip_rt_tick_means = []
 		self.packets_delivered_count = 0 
 		self.packets_delivered_slices = []
-		self.rt_ticks_by_level = {0:[], 1:[], 2:[], 3:[], 4:[]}
+		self.rt_ticks_by_level = set_tick_ds(levels)
 		self.total_rt_by_levels = []
+		self.computation_power = set_computation_ds(levels)
+		self.cache_slots = set_cache_ds(levels)
+		self.packet_gen_job = None 
 
 
 		self.gui_boolean = gui_boolean
@@ -109,7 +159,7 @@ class IP_Network(object):
 			self.initialize_gui()
 			self.command_entry = ''
 		else:
-			self.packet_frequency = 300
+			self.packet_frequency = 100 * self.levels
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		self.prepare()
@@ -225,6 +275,7 @@ class IP_Network(object):
 
 
 
+
 	## Callback funcions for Buttons in GUI
  	def pressed(self, button):  # Updates the display of simulator state 
 		self.simulation_state.set(str(button))
@@ -290,41 +341,6 @@ class IP_Network(object):
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='grey', width=1.0)
 		self.canvas.update()
 
-	def show_region(self):
-		region = self.regions[11]
-
-		self.canvas.itemconfig(self.nodes[region[0]].canvas_id, outline='purple', width=2.0)
-		self.canvas.itemconfig(self.nodes[self.get_actual_node(region[0])].canvas_id, outline='purple', width=2.0)
-		self.canvas.update_idletasks()
-		sleep(2)
-		self.canvas.itemconfig(self.nodes[region[0]].canvas_id, outline='grey', width=1.0)
-		self.canvas.itemconfig(self.nodes[self.get_actual_node(region[0])].canvas_id, outline='grey', width=1.0)
-		self.canvas.update_idletasks()
-		
-
-		for i in range(1,7):
-				self.canvas.itemconfig(self.nodes[region[i]].canvas_id, outline='purple', width=2.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(region[i])].canvas_id, outline='purple', width=2.0)
-				self.canvas.update_idletasks()
-		sleep(2)
-		for i in range(1,7):
-				self.canvas.itemconfig(self.nodes[region[i]].canvas_id, outline='grey', width=1.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(region[i])].canvas_id, outline='grey', width=1.0)
-				self.canvas.update_idletasks()
-
-	def test_regions(self):
-		for region in self.regions:
-			print region
-			for i in region:
-				print i
-				self.canvas.itemconfig(self.nodes[i].canvas_id, outline='purple', width=2.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(i)].canvas_id, outline='purple', width=2.0)
-				self.canvas.update()
-			sleep(self.delay/1000)
-			for i in range(1,7):
-				self.canvas.itemconfig(self.nodes[i].canvas_id, outline='grey', width=1.0)
-				self.canvas.itemconfig(self.nodes[self.get_actual_node(i)].canvas_id, outline='grey', width=1.0)
-				self.canvas.update()
 
 	def show_publish(self):
 		source_id = 1000
@@ -365,21 +381,6 @@ class IP_Network(object):
 		canvas_id = self.nodes[node_id].canvas_id
 		self.canvas.itemconfig(canvas_id, outline=color_dict['color'], width=color_dict['width'])
 		self.canvas.update()
-		
-	def round_trip_time(self):
-		logging.debug('Initializing RTT test:')
-		#if method=='random':
-		#	logging.debug('Starting random content test:')
-		#	pass
-		#elif method=='no cache':
-		logging.debug('Starting no cached content test:')
-		for index in range(0,50):
-			name = self.content_names[index]
-			requester_id = self.get_random_leaf_machine()
-			time_start = time.clock()
-			packet = {'content_name':name, '_type':'request', 'from_id':0, 'time_start':time_start, 'size':1 }
-			self.enqueue_to_incoming(requester_id, packet )
-			logging.debug('Content name: %s -- Requester ID: %d -- Packet %s', name, requester_id, str(packet))
 
 	def DDoS(self):
 		DDoS_region = self.regions[random.randint(0,len(self.regions)-1)]
@@ -402,13 +403,6 @@ class IP_Network(object):
 			#i += 1
 		self.canvas.update_idletasks()
 		self.root.after(1, self._DDoS, region_nodes, content_name, size)
-
-	def DDoS_follow_up(self, DDoS_region, content_name):  # Can be called amidst a DDoS to show content is still reachable 
-		selected_region = 2
-		node_id = self.regions[selected_region][0]
-		self.enqueue_to_incoming(node_id, {'content_name': content_name, 'from_id':0, '_type': 'request', 'size': 1} )
-		color_dict = self.get_color(node_id)
-		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline=color_dict['color'], width=color_dict['width'])
 		
 	def update_delay(self, new_value):
 		val = new_value[0]
@@ -417,15 +411,6 @@ class IP_Network(object):
 			self.delay = 100
 		else:
 			self.delay = val * 1000
-
-	def test_nums(self):
-		""" Displays whether nodes where numbered correctly """
-		for i in range(1,100):
-			print i
-			self.canvas.itemconfig(self.nodes[i].canvas_id, outline='yellow', width=2.0)
-			self.canvas.update_idletasks()
-			self.canvas.itemconfig(self.nodes[i].canvas_id, outline='grey', width=1.0)
-			self.canvas.update_idletasks()
 
 	def zoom(self, method):  # Used for both zooming in and out
 		if method == 'in':
@@ -649,19 +634,10 @@ class IP_Network(object):
 				canvas_id = self.canvas.create_circle(x-2*r*math.sqrt(3)/2, (y+r) , r, outline = 'grey', width = 1.0)
 				self.nodes[7*i+7] = IPRouter(7*i+7, canvas_id, self.gui_boolean)
 
-	## Debugging functions
-	def in_transit(self): # Used for debugging
-		logging.debug(' packets in transit: %s', str(self.in_transit_packets))
-
 	def _create_circle(self, x, y, r, **kwargs):
 		"""implementation for creating a circle in Tk"""
 		return self.create_oval(x-r, y-r, x+r, y+r, **kwargs)
 	tk.Canvas.create_circle = _create_circle
-
-	def status(self):
-		print str(self.in_transit_packets)
-		for n in self.nodes:
-			print str(self.nodes[n].incoming)
 
 	def deliver_in_transit_packets(self):
 		if( not is_empty(self.in_transit_packets)):
@@ -867,9 +843,9 @@ class IP_Network(object):
 	def prepare(self):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = 2800
-		while (leaf_id > 401):
-			for i in range(0,4):
+		leaf_id = self.upper_lim
+		while (leaf_id > self.lower_lim):
+			for i in range(0,1):
 				content_name = str(content_index)
 				self.publish_content(content_name, content_name, leaf_id)
 				self.content_names.append(content_name)
@@ -880,6 +856,7 @@ class IP_Network(object):
 		#self.simulation_state.set("PLAYING")
 		#self.frame.update_idletasks()
 				
+	# Helper function for prepare()
 	def publish_content( self,content_name, content_data, source_id):
 		self.nodes[source_id].content_store[content_name] =  content_data
 		
@@ -895,7 +872,7 @@ class IP_Network(object):
 	def assemble_regions(self):
 		node_id = self.lower_lim
 		region_num = 1 
-		while node_id in range(node_id,2801):
+		while node_id in range(node_id,self.upper_lim):
 			region = []
 			for i in range(0,7):
 				region.append(node_id)
@@ -917,7 +894,7 @@ class IP_Network(object):
 		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
 
 	def test_regionality_topdown(self):
-		for leaf_id in range(self.lower_lim, 2801):
+		for leaf_id in range(self.lower_lim, self.upper_lim + 1):
 			parent_id = self.get_parent(leaf_id)
 			while ( parent_id != -1 ):    # get_parent of 0 always returns -1
 				if self.nodes[leaf_id].region_num not in self.nodes[parent_id].contained_regions:
@@ -927,44 +904,17 @@ class IP_Network(object):
 		logging.debug('test PASSED')
 
 	def get_computation_power(self, node_id):
-		if node_id == 0:
-			return 15
-		elif node_id <= 7:
-			return 10
-		elif node_id <= 56:
-			return 6
-		elif node_id <= 399:
-			return 2
-		else: 
-			return 1
+		return self.computation_power[self.get_level(node_id)]
 			
 	def loop_step(self):
-		for n in range(0, len(self.nodes)):
+	
+		#pool = Pool(processes = 8)
+		#pool.map(self.step_through, range(0,self.upper_lim+1))
+		#pool.terminate()
+		for n in range(0, self.upper_lim + 1):
 			self.ip_process_without_gui(n) 
 
-		congestion = 0 
-		node_level = 0
-		for n in range(0, 8):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 1
-		for n in range(8, 57):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 2
-		for n in range(57, 400):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 3
-		for n in range(400, 2801):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
+	
 
 	def send_packet(self, _id,  _type, content_name, from_id, dest_id, ticks, *args):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
@@ -980,36 +930,12 @@ class IP_Network(object):
 
 	def deliver_packets(self):
 		# Step 2 of 2, ofthe packet sending process
-		if not is_empty(self.packets_to_be_delivered):
+		while(not is_empty(self.packets_to_be_delivered)): 
 			pack = self.packets_to_be_delivered.pop()
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
-			self.deliver_packets()
-		else:
-			
-			congestion = 0 
-			node_level = 0
-			for n in range(0, 8):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
 
-			congestion = 0 
-			node_level = 1
-			for n in range(8, 57):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
-
-			congestion = 0 
-			node_level = 2
-			for n in range(57, 400):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
-
-			congestion = 0 
-			node_level = 3
-			for n in range(400, 2801):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion	
+	
 
 	def packet_generator(self,size):
 		logging.debug('packet_generator called, starting...')
@@ -1019,7 +945,7 @@ class IP_Network(object):
 			self.send_packet(0, 'request',content_name, requester_id ,requester_id,0)
 
 	def standard_traffic(self):
-		logging.debug('standard_traffic called, begginging packet_generator')
+		logging.debug('standard_traffic called, beggining packet_generator')
 		self.packet_generator(self.packet_frequency) # This can be changed to suiting 
 	
 	def run_simulator(self, warm_up_seconds, loop_seconds, packet_gen_interval, logging_interval):
@@ -1029,7 +955,7 @@ class IP_Network(object):
 		self.event_loop(loop_seconds, logging_interval)
 
 	def warm_up(self,warm_up_seconds):
-		logging.debug('phase 1 packet_generator completem, begging sched and warm_up')
+		logging.debug('phase 1 packet_generator complete, beggining sched and warm_up')
 		start = time.time()
 		end = time.time()
 		while end-start <= warm_up_seconds:
@@ -1042,7 +968,7 @@ class IP_Network(object):
 		self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_rt_tick_times, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
-		self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
+		#self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -1052,10 +978,10 @@ class IP_Network(object):
 			self.loop_step()
 			end = time.time()
 		self.sched.shutdown()
-		self.write_level_congestions()
+		#self.write_level_congestions()
 		self.write_rtt_means()
-		self.write_packets_delivered()
-		self.write_rt_by_level()
+		#self.write_packets_delivered()
+		#self.write_rt_by_level()
 
 	def log_level_congestion(self):
 		self.total_congestions.append(copy.deepcopy(self.level_congestion))
@@ -1073,7 +999,8 @@ class IP_Network(object):
 		self.ip_rt_tick_times = []
 
 	def write_rtt_means(self):
-		ip_rtt_file = open("ip_rtt.csv","a")
+		file_name = "ip_rtt" + str(self.levels) + ".csv"
+		ip_rtt_file = open(file_name,"a")
 		for mean in self.ip_rt_tick_means:
 			ip_rtt_file.write(str(mean) + "\n")
 
@@ -1086,22 +1013,6 @@ class IP_Network(object):
 		for packets_count in self.packets_delivered_slices:
 			packets_file.write(str(packets_count) + "\n")
 
-	def log_rt_by_level(self):
-		arr = []
-		for key in self.rt_ticks_by_level:
-			arr.append(int(sum(self.rt_ticks_by_level[key])/len(self.rt_ticks_by_level[key])))
-		self.total_rt_by_levels.append(copy.deepcopy(arr))
-		for key in self.rt_ticks_by_level:
-			self.rt_ticks_by_levels[key] = []
-
-
-	def write_rt_by_level(self):
-		rt_level_file = open("ip_rt_by_level.csv","a")
-		for interval in self.total_rt_by_levels:
-			string = ''
-			for val in interval:
-				string += str(val) + ','
-			rt_level_file.write(string.strip(',') + "\n")
 
 
 	def region_contained(self, high_node_id, low_node_id):
@@ -1190,7 +1101,7 @@ class IP_Network(object):
 					self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 					logging.debug(" Added content (%s) to content store"  % packet.content_name)
 					try:
-						level = get_level(node_id)
+						level = self.get_level(node_id)
 						rt_ticks = (packet.ticks - self.nodes[node_id].local_tick_count[packet.id])
 						self.rt_ticks_by_level[level].append(rt_ticks)
 						del self.nodes[node_id].local_tick_count[packet.content_name]
@@ -1208,22 +1119,18 @@ class IP_Network(object):
 
 
 
+
+
 	## Utility Functions for Network Accessability 
+	def get_level(self, node_id):
+		return self.level_ranges_dict[node_id]
+
+		logging.debug('Incorrect Node ID given at get_level')
+
 	def set_up_cache(self):
 		for node_id in self.nodes:
-			level = get_level(node_id)
-			if level == 0:
-				self.nodes[node_id].cache_max = 200
-			elif level == 1:
-				self.nodes[node_id].cache_max = 150
-			elif level == 2:
-				self.nodes[node_id].cache_max = 60
-			elif level == 3:
-				self.nodes[node_id].cache_max = 40
-			elif level == 4:
-				self.nodes[node_id].cache_max = 20
-			else:
-				logging.warning('Error: Incorrect level signifier')
+			level = self.get_level(node_id)
+			self.nodes[node_id].cache_max = self.cache_slots[level]
 
 	def loop(self):
 		self.deliver_packets()

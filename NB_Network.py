@@ -37,19 +37,6 @@ def is_empty( any_structure):
 		#print('Structure is empty.')
 		return True
 
-def get_level(node_id):
-	if node_id == 0:
-		return 0
-	elif node_id <=7:
-		return 1
-	elif node_id <= 56:
-		return 2
-	elif node_id <= 399:
-		return 3
-	elif node_id <= 2800:
-		return 4
-	else: 
-		logging.debug('Incorrect Node ID given at get_level')
 
 class AutoScrollbar(tk.Scrollbar):
     # a scrollbar that hides itself if it's not needed.  only
@@ -78,6 +65,55 @@ def get_upper_lim(levels):
 	return ((7**levels) + get_lower_lim(levels)) -1
 
 
+def set_tick_ds(levels):
+	dictionary = {}
+	for i in range(0,levels+1):
+		dictionary[i] = []
+	return dictionary
+
+
+def set_congestion_ds(levels):
+	dictionary = {}
+	for i in range(0,levels+1):
+		dictionary[i] = 0
+	return dictionary
+
+def set_level_ranges(levels, upper_lim):
+	dictionary={}
+	dictionary[0] = [0]
+	total = 0
+
+
+	for i in range(1,levels+1):
+		old_total = total +1
+		total += 7**i
+		dictionary[i] = [old_total, total]
+	
+	node_dict = {}
+	node_dict[0] = 0
+	for node_id in range(1, upper_lim + 1):
+		for i in range(1, levels+1):
+			if node_id >= dictionary[i][0] and node_id <= dictionary[i][1]:
+				node_dict[node_id] = i
+
+	return node_dict
+
+def set_computation_ds(levels):
+	dictionary = {}
+	power = -4
+	for i in reversed(range(0,levels+1)):
+		power += 5
+		dictionary[i] = power
+	return dictionary
+
+def set_cache_ds(levels):
+	dictionary = {}
+	slots = 0
+	for i in reversed(range(0,levels+1)):
+		slots += 20
+		dictionary[i] = slots
+	return dictionary
+
 class NB_Network(object):
 	def __init__( self, levels, gui_boolean):
 		
@@ -88,15 +124,19 @@ class NB_Network(object):
 		self.upper_lim = get_upper_lim(levels)
 		self.content_names = []
 		self.regions = []
+		self.level_ranges_dict = set_level_ranges(levels, self.upper_lim) 
+
 		self.rt_tick_times = []
 		self.rt_tick_means = []
-		self.level_congestion = {0:0, 1:0, 2:0, 3:0, 4:0}
+		self.level_congestion = set_congestion_ds(levels)
 		self.total_congestions = []
 		self.packets_to_be_delivered = []
 		self.packets_delivered_count = 0 
 		self.packets_delivered_slices = []
-		self.rt_ticks_by_level = {0:[], 1:[], 2:[], 3:[], 4:[]}
+		self.rt_ticks_by_level = set_tick_ds(levels)
 		self.total_rt_by_levels = []
+		self.computation_power = set_computation_ds(levels)
+		self.cache_slots = set_cache_ds(levels)
 
 		self.gui_boolean = gui_boolean
 		if self.gui_boolean:
@@ -114,7 +154,7 @@ class NB_Network(object):
 			self.initialize_gui()
 			self.command_entry = ''
 		else:
-			self.packet_frequency = 300 
+			self.packet_frequency = 100 * self.levels
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		self.set_up_cache()
@@ -780,6 +820,8 @@ class NB_Network(object):
 
 
 
+
+
 	## Functionality for DES			
 	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
 		self.nodes[0] = NBRouter(0, 0, self.gui_boolean)
@@ -800,7 +842,7 @@ class NB_Network(object):
 
 			#center
 			self.nodes[7*i+1] = Routers.NBRouter(7*i+1, 0, self.gui_boolean) # 0 signifies no canvas id
-			self._build_without_gui(level-1,7*i+1,)
+			self._build_without_gui(level-1,7*i+1)
 
 			#north
 			self.nodes[7*i+2] = Routers.NBRouter(7*i+2, 0, self.gui_boolean)
@@ -852,26 +894,15 @@ class NB_Network(object):
 
 	def set_up_cache(self):
 		for node_id in self.nodes:
-			level = get_level(node_id)
-			if level == 0:
-				self.nodes[node_id].cache_max = 200
-			elif level == 1:
-				self.nodes[node_id].cache_max = 150
-			elif level == 2:
-				self.nodes[node_id].cache_max = 60
-			elif level == 3:
-				self.nodes[node_id].cache_max = 40
-			elif level == 4:
-				self.nodes[node_id].cache_max = 20
-			else:
-				logging.warning('Error: Incorrect level signifier')
+			level = self.get_level(node_id)
+			self.nodes[node_id].cache_max = self.cache_slots[level]
 		
 	def prepare(self):
 		content_index = 10000
 		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = 2800
-		while (leaf_id > 401):
-			for i in range(0,4):
+		leaf_id = self.upper_lim
+		while (leaf_id > self.lower_lim):
+			for i in range(0,1):
 				content_name = str(content_index)
 				self.publish_content(content_name, content_name, leaf_id)
 				self.content_names.append(content_name)
@@ -896,7 +927,7 @@ class NB_Network(object):
 
 	def assemble_regions(self):
 		node_id = self.lower_lim
-		while node_id in range(self.lower_lim,self.upper_lim):
+		while node_id in range(self.lower_lim,self.upper_lim + 1):
 			region = []
 			for i in range(0,7):
 				region.append(node_id)
@@ -904,50 +935,16 @@ class NB_Network(object):
 			self.regions.append(region)
 
 	def get_computation_power(self, node_id):
-		if node_id == 0:
-			return 15
-		elif node_id <= 7:
-			return 10
-		elif node_id <= 56:
-			return 6
-		elif node_id <= 399:
-			return 2
-		else: 
-			return 1
+		return self.computation_power[self.get_level(node_id)]
 			
 	def loop_step(self):
-		for node_id in range(0,2801):
+		for node_id in range(0,self.upper_lim+1):
+			self.process_without_gui(node_id)
 			for packet_list in self.nodes[node_id].pending_table.itervalues():
 				for p in packet_list:
 					p.ticks += 1 
 			
-
-		for n in range(0, len(self.nodes)):
-			self.process_without_gui(n) 
-
-		congestion = 0 
-		node_level = 0
-		for n in range(0, 8):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 1
-		for n in range(8, 57):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 2
-		for n in range(57, 400):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
-
-		congestion = 0 
-		node_level = 3
-		for n in range(400, 2801):
-			congestion +=  len(self.nodes[n].incoming)
-		self.level_congestion[node_level] = congestion
+		
 
 	def send_packet(self, _type, content_name, from_id, dest_id, ticks, *args):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
@@ -963,36 +960,12 @@ class NB_Network(object):
 
 	def deliver_packets(self):
 		# Step 2 of 2, ofthe packet sending process
-		if not is_empty(self.packets_to_be_delivered):
+		while (not is_empty(self.packets_to_be_delivered)):
 			pack = self.packets_to_be_delivered.pop()
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
-			self.deliver_packets()
-		else:
 			
-			congestion = 0 
-			node_level = 0
-			for n in range(0, 8):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
-
-			congestion = 0 
-			node_level = 1
-			for n in range(8, 57):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
-
-			congestion = 0 
-			node_level = 2
-			for n in range(57, 400):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion
-
-			congestion = 0 
-			node_level = 3
-			for n in range(400, 2801):
-				congestion +=  len(self.nodes[n].incoming)
-			self.level_congestion[node_level] = congestion	
+		
 
 	def packet_generator(self,size):
 		logging.debug('packet_generator called, starting...')
@@ -1012,7 +985,7 @@ class NB_Network(object):
 		self.event_loop(loop_seconds, logging_interval)
 
 	def warm_up(self,warm_up_seconds):
-		logging.debug('phase 1 packet_generator completem, begging sched and warm_up')
+		logging.debug('phase 1 packet_generator complete, beggining sched and warm_up')
 		start = time.time()
 		end = time.time()
 		while end-start <= warm_up_seconds:
@@ -1022,10 +995,10 @@ class NB_Network(object):
 			#self.packet_generator(50)
 
 	def event_loop(self, seconds, logging_interval):
-		self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
+		#self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_rt_ticks, seconds=logging_interval)
-		self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
-		self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
+		#self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
+		#self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -1034,11 +1007,11 @@ class NB_Network(object):
 			self.deliver_packets()
 			self.loop_step()
 			end = time.time()
-		self.sched.shutdown()
-		self.write_level_congestions()
+		self.sched.shutdown(wait=False)
+		#self.write_level_congestions()
 		self.write_rt_tick_means()
-		self.write_packets_delivered()
-		self.write_rt_by_level()
+		#self.write_packets_delivered()
+		#self.write_rt_by_level()
 
 	def process_without_gui(self, node_id):
 		global process_start_time, process_end_time
@@ -1125,7 +1098,7 @@ class NB_Network(object):
 					del self.nodes[node_id].pending_table[packet.content_name]
 					logging.debug(" Deleted content (%s) from PT"  % packet.content_name)
 					try:
-						level = get_level(node_id)
+						level = self.get_level(node_id)
 						rt_ticks = (packet.ticks - self.nodes[node_id].local_tick_count[packet.content_name])
 						self.rt_ticks_by_level[level].append(rt_ticks)
 						del self.nodes[node_id].local_tick_count[packet.content_name]
@@ -1167,7 +1140,8 @@ class NB_Network(object):
 
 
 	def write_rt_tick_means(self):
-		rtt_file = open("rtt.csv","a")
+		file_name = "nb_rtt" + str(self.levels) + ".csv"
+		rtt_file = open(file_name,"a")
 		for mean in self.rt_tick_means:
 			rtt_file.write(str(mean) + "\n")
 
@@ -1180,22 +1154,6 @@ class NB_Network(object):
 		for packets_count in self.packets_delivered_slices:
 			packets_file.write(str(packets_count) + "\n")
 
-	def log_rt_by_level(self):
-		arr = []
-		for key in self.rt_ticks_by_level:
-			arr.append(int(sum(self.rt_ticks_by_level[key])/len(self.rt_ticks_by_level[key])))
-		self.total_rt_by_levels.append(copy.deepcopy(arr))
-		for key in self.rt_ticks_by_level:
-			self.rt_ticks_by_levels[key] = []
-
-
-	def write_rt_by_level(self):
-		rt_level_file = open("rt_by_level.csv","a")
-		for interval in self.total_rt_by_levels:
-			string = ''
-			for val in interval:
-				string += str(val) + ','
-			rt_level_file.write(string.strip(',') + "\n")
 
 
 
@@ -1203,6 +1161,11 @@ class NB_Network(object):
 
 
 	## Utility Functions for Network Accessability 
+	def get_level(self, node_id):
+		return self.level_ranges_dict[node_id]
+
+		logging.debug('Incorrect Node ID given at get_level')
+
 	def loop(self):
 		self.deliver_packets()
 		self.loop_step()
