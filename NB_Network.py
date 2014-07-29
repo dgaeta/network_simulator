@@ -154,7 +154,7 @@ class NB_Network(object):
 			self.initialize_gui()
 			self.command_entry = ''
 		else:
-			self.packet_frequency = 100 * self.levels
+			self.packet_frequency = 100 * (self.levels * 7)
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		self.set_up_cache()
