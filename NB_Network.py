@@ -145,7 +145,7 @@ class NB_Network(object):
 			self.radius = 150 
 			self.flag = True
 			self.in_transit_packets = []
-			self.delay = 500
+			self.delay = 2000
 			self.ammo = 0 
 			self.simulation_state = ''
 			self.root = ''
@@ -822,6 +822,9 @@ class NB_Network(object):
 
 
 
+
+
+
 	## Functionality for DES			
 	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
 		self.nodes[0] = NBRouter(0, 0, self.gui_boolean)
@@ -938,7 +941,7 @@ class NB_Network(object):
 		return self.computation_power[self.get_level(node_id)]
 			
 	def loop_step(self):
-		for node_id in range(0,self.upper_lim+1):
+		for node_id in reversed(range(0,self.upper_lim+1)):
 			self.process_without_gui(node_id)
 			for packet_list in self.nodes[node_id].pending_table.itervalues():
 				for p in packet_list:
@@ -953,14 +956,12 @@ class NB_Network(object):
 			pack = Packet(0, _type, str(content_name), from_id,  dest_id, args[0])
 		else:
 			pack = Packet(0, _type, str(content_name), from_id,  dest_id)
-		if pack:
-			pack.ticks += (1 + ticks) # Latency in delivering a packet
-		if self:
-			self.packets_to_be_delivered.append(pack)
+		pack.ticks += (1 + ticks) # Latency in delivering a packet
+		self.packets_to_be_delivered.append(pack)
 
 	def deliver_packets(self):
 		# Step 2 of 2, ofthe packet sending process
-		while (not is_empty(self.packets_to_be_delivered)):
+		while (self.packets_to_be_delivered):
 			pack = self.packets_to_be_delivered.pop()
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
@@ -1016,11 +1017,11 @@ class NB_Network(object):
 	def process_without_gui(self, node_id):
 		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
-		comp_power = self.get_computation_power(node_id)
+		comp_power = self.computation_power[self.level_ranges_dict[node_id]]
 		i = 0 
 		while i < comp_power:
 
-			if (not is_empty(self.nodes[node_id].incoming)):
+			if (self.nodes[node_id].incoming):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
@@ -1057,9 +1058,6 @@ class NB_Network(object):
 						self.send_packet( 'request', packet.content_name ,node_id, directed_child_id, packet.ticks)
 						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.origin_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
-						""" account for local ticks"""
-						if (node_id == 0) and (not packet.content_name in self.nodes[node_id].local_tick_count):
-							self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 					# Case 4: no duplicate, add to PT, forward to parent 
 					else:
@@ -1068,8 +1066,6 @@ class NB_Network(object):
 						self.send_packet('request', packet.content_name, node_id, parent_id, packet.ticks )
 						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.origin_id, parent_id) 
 					 	""" account for local ticks"""
-					 	if (not packet.content_name in self.nodes[node_id].local_tick_count):
-							self.nodes[node_id].local_tick_count[packet.content_name] = packet.ticks
 
 				elif packet.type == 'response':
 					# packet is a response
@@ -1097,13 +1093,6 @@ class NB_Network(object):
 					logging.debug(" Added content (%s) to content store"  % packet.content_name)
 					del self.nodes[node_id].pending_table[packet.content_name]
 					logging.debug(" Deleted content (%s) from PT"  % packet.content_name)
-					try:
-						level = self.get_level(node_id)
-						rt_ticks = (packet.ticks - self.nodes[node_id].local_tick_count[packet.content_name])
-						self.rt_ticks_by_level[level].append(rt_ticks)
-						del self.nodes[node_id].local_tick_count[packet.content_name]
-					except KeyError: 
-						pass
 					
 				else:
 					logging.warning(' Mislabeled Packet')
@@ -1223,13 +1212,6 @@ class NB_Network(object):
 		size = self.nodes[node_id].total_load()
 		#for key in self.nodes[node_id].pending_table:     #account for size of awaiting requests
 		#	size += len(self.nodes[node_id].pending_table[key])
-		if len(self.nodes[node_id].incoming) > 0:
-			packet = self.nodes[node_id].incoming[0]
-			if packet['_type'] == 'response':
-				return {'color':'purple', 'width':2.0}
-
-		if node_id == 2200 and len(self.nodes[node_id].incoming) == 0:
-			return {'color':'green', 'width':2.0}
 
 		if node_id <= 8:
 			if size <= 0:

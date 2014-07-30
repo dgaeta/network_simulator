@@ -911,7 +911,7 @@ class IP_Network(object):
 		#pool = Pool(processes = 8)
 		#pool.map(self.step_through, range(0,self.upper_lim+1))
 		#pool.terminate()
-		for n in range(0, self.upper_lim + 1):
+		for n in reversed(range(0, self.upper_lim + 1)):
 			self.ip_process_without_gui(n) 
 
 	
@@ -923,14 +923,12 @@ class IP_Network(object):
 			pack = Packet(_id, _type, str(content_name), from_id,  dest_id, args[0])
 		else:
 			pack = Packet(_id, _type, str(content_name), from_id,  dest_id)
-		if pack:
-			pack.ticks += (1 + ticks) # Latency in delivering a packet
-		if self:
-			self.packets_to_be_delivered.append(pack)
+		pack.ticks += (1 + ticks) # Latency in delivering a packet
+		self.packets_to_be_delivered.append(pack)
 
 	def deliver_packets(self):
 		# Step 2 of 2, ofthe packet sending process
-		while(not is_empty(self.packets_to_be_delivered)): 
+		while(self.packets_to_be_delivered): 
 			pack = self.packets_to_be_delivered.pop()
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
@@ -1028,11 +1026,11 @@ class IP_Network(object):
 	def ip_process_without_gui(self, node_id):
 		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
-		comp_power = self.get_computation_power(node_id)
+		comp_power = self.computation_power[self.level_ranges_dict[node_id]]
 		i = 0 
 		while i < comp_power:
 
-			if (not is_empty(self.nodes[node_id].incoming)):
+			if (self.nodes[node_id].incoming):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
@@ -1064,8 +1062,7 @@ class IP_Network(object):
 						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name]   #direction of child where destination node is contained 
 						self.send_packet( packet.id, 'request', packet.content_name ,packet.origin_id, directed_child_id, packet.ticks)
 						logging.debug(" forwarded request to child %d ", directed_child_id )
-						if node_id == 0:
-							self.nodes[node_id].local_tick_count[packet.id] = packet.ticks
+						
 
 					# Case 3: location of content not known, send to parent, keep same origin id of packet
 					else:
@@ -1100,13 +1097,6 @@ class IP_Network(object):
 					# Now that all packets have been process cache the content data 
 					self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 					logging.debug(" Added content (%s) to content store"  % packet.content_name)
-					try:
-						level = self.get_level(node_id)
-						rt_ticks = (packet.ticks - self.nodes[node_id].local_tick_count[packet.id])
-						self.rt_ticks_by_level[level].append(rt_ticks)
-						del self.nodes[node_id].local_tick_count[packet.content_name]
-					except KeyError: 
-						pass
 				
 				else:
 					logging.warning(' Mislabeled Packet')
