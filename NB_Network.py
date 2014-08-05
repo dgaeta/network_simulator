@@ -64,13 +64,11 @@ def get_lower_lim(levels):
 def get_upper_lim(levels):
 	return ((7**levels) + get_lower_lim(levels)) -1
 
-
 def set_tick_ds(levels):
 	dictionary = {}
 	for i in range(0,levels+1):
 		dictionary[i] = []
 	return dictionary
-
 
 def set_congestion_ds(levels):
 	dictionary = {}
@@ -947,8 +945,6 @@ class NB_Network(object):
 				for p in packet_list:
 					p.ticks += 1 
 			
-		
-
 	def send_packet(self, _type, content_name, from_id, dest_id, ticks, *args):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
 		# Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
@@ -966,8 +962,6 @@ class NB_Network(object):
 			dest_id = pack.dest_id
 			self.nodes[dest_id].incoming.append(pack)
 			
-		
-
 	def packet_generator(self,size):
 		logging.debug('packet_generator called, starting...')
 		for i in range(0,size):
@@ -1166,7 +1160,10 @@ class NB_Network(object):
 		return x
 
 	def get_random_leaf_machine(self):
-		return random.randint(self.lower_lim+1, self.upper_lim)
+		leaf_id = 7 
+		while leaf_id % 7 == 0: 
+			leaf_id = random.randint(self.lower_lim+1, self.upper_lim)
+		return leaf_id
 	
 	def get_child_at(self,direction, node_id):
 		if (direction.lower() == 'c'):

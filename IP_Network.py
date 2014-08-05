@@ -1133,7 +1133,10 @@ class IP_Network(object):
 		return x
 
 	def get_random_leaf_machine(self):
-		return random.randint(self.lower_lim+1, self.upper_lim)
+		leaf_id = 7 
+		while leaf_id % 7 == 0: 
+			leaf_id = random.randint(self.lower_lim+1, self.upper_lim)
+		return leaf_id
 	
 	def get_child_at(self,direction, node_id):
 		if (direction.lower() == 'c'):
