@@ -113,7 +113,7 @@ def set_cache_ds(levels):
 	return dictionary
 
 class NB_Network(object):
-	def __init__( self, levels, gui_boolean):
+	def __init__( self, levels, gui_boolean, p, q):
 		
 		# data structs for the network, core data structures
 		self.nodes = {}
@@ -135,6 +135,8 @@ class NB_Network(object):
 		self.total_rt_by_levels = []
 		self.computation_power = set_computation_ds(levels)
 		self.cache_slots = set_cache_ds(levels)
+		self.p = p     # probability of request arising at a node
+		self.q = q  # probability of node being chosen to publish content
 
 		self.gui_boolean = gui_boolean
 		if self.gui_boolean:
@@ -152,7 +154,7 @@ class NB_Network(object):
 			self.initialize_gui()
 			self.command_entry = ''
 		else:
-			self.packet_frequency = 20 * (self.levels * 7)
+			self.packet_frequency = int((7**self.levels) * self.p)
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
 		self.set_up_cache()
@@ -900,15 +902,16 @@ class NB_Network(object):
 		
 	def prepare(self):
 		content_index = 10000
-		## HARD CODED -> 1 object per leaf -> 2458 content objects
-		leaf_id = self.upper_lim
-		while (leaf_id > self.lower_lim):
-			for i in range(0,1):
-				content_name = str(content_index)
-				self.publish_content(content_name, content_name, leaf_id)
-				self.content_names.append(content_name)
-				content_index +=1
-			leaf_id -= 1
+		node_count = 7**self.levels
+		content_count = node_count * self.q 
+		i = 0
+		while ( i < content_count):
+			leaf_id = random.randint(self.lower_lim, self.upper_lim)
+			content_name = str(content_index)
+			self.publish_content(content_name, content_name, leaf_id)
+			self.content_names.append(content_name)
+			content_index +=1
+			i += 1
 		logging.debug('  Publishing complete. avail content_names are %d through %d ', int(self.content_names[0]), 
 			int(self.content_names[(len(self.content_names) -1)]))
 		#self.simulation_state.set("PLAYING")
@@ -1123,7 +1126,7 @@ class NB_Network(object):
 
 
 	def write_rt_tick_means(self):
-		file_name = "nb_rtt" + str(self.levels) + ".csv"
+		file_name = "nb_rtt" + "-l=" + str(self.levels) + "-p="+ str(self.p) + "-q=" + str(self.q) +  ".csv"
 		rtt_file = open(file_name,"a")
 		for mean in self.rt_tick_means:
 			rtt_file.write(str(mean) + "\n")
