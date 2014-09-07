@@ -22,21 +22,6 @@ from Routers import *
 
 logging.getLogger().setLevel(logging.DEBUG)
 
-import matplotlib
-matplotlib.use('TkAgg')
-
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
-
-
-
-def is_empty( any_structure):
-	if any_structure:
-		#print('Structure is not empty.')
-		return False
-	else:
-		#print('Structure is empty.')
-		return True
-
 
 class AutoScrollbar(tk.Scrollbar):
     # a scrollbar that hides itself if it's not needed.  only
@@ -63,18 +48,6 @@ def get_lower_lim(levels):
 
 def get_upper_lim(levels):
 	return ((7**levels) + get_lower_lim(levels)) -1
-
-def set_tick_ds(levels):
-	dictionary = {}
-	for i in range(0,levels+1):
-		dictionary[i] = []
-	return dictionary
-
-def set_congestion_ds(levels):
-	dictionary = {}
-	for i in range(0,levels+1):
-		dictionary[i] = 0
-	return dictionary
 
 def set_level_ranges(levels, upper_lim):
 	dictionary={}
@@ -126,17 +99,13 @@ class NB_Network(object):
 
 		self.rt_tick_times = []
 		self.rt_tick_means = []
-		self.level_congestion = set_congestion_ds(levels)
-		self.total_congestions = []
 		self.packets_to_be_delivered = []
-		self.packets_delivered_count = 0 
-		self.packets_delivered_slices = []
-		self.rt_ticks_by_level = set_tick_ds(levels)
-		self.total_rt_by_levels = []
 		self.computation_power = set_computation_ds(levels)
 		self.cache_slots = set_cache_ds(levels)
 		self.p = p     # probability of request arising at a node
 		self.q = q  # probability of node being chosen to publish content
+		self.TTD = 700
+		self.max_resends = 5
 
 		self.gui_boolean = gui_boolean
 		if self.gui_boolean:
@@ -157,9 +126,10 @@ class NB_Network(object):
 			self.packet_frequency = int((7**self.levels) * self.p)
 			self.sched = Scheduler(daemon=True)
 			self.build_without_gui(self.levels)
+
 		self.set_up_cache()
-		self.prepare()
-		
+		self.prepare_content() # sets up probability and publishes content to nodes
+		self.set_TDD
 		
 	## Buttons and Sliders
 	def initialize_gui(self):
@@ -671,7 +641,7 @@ class NB_Network(object):
 	tk.Canvas.create_circle = _create_circle
 
 	def deliver_in_transit_packets(self):
-		if( not is_empty(self.in_transit_packets)):
+		if( self.in_transit_packets):
 			packet = self.in_transit_packets.pop()
 			dest_id = packet['dest_id']
 			if dest_id == -1 :
@@ -708,7 +678,7 @@ class NB_Network(object):
 		comp_power = self.get_computation_power(node_id)
 		i = 0 
 		while i < comp_power:
-			if (not is_empty(self.nodes[node_id].incoming)):
+			if (self.nodes[node_id].incoming):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				#inself.nodes[node_id].total_load -= packet['size']
@@ -823,10 +793,13 @@ class NB_Network(object):
 
 
 
+	### DISCRETE EVENT SIMULATOR functions below --------
+	### These functions remain seperate from the GUI implementations 	
 
 
-	## Functionality for DES			
-	def build_without_gui(self, levels):   # Used for commercial demonstration of the Simulator 
+	## Functions for Setting-up
+
+	def build_without_gui(self, levels):   
 		self.nodes[0] = NBRouter(0, 0, self.gui_boolean)
 		self._build_without_gui(levels-1, 0)
 	
@@ -894,21 +867,20 @@ class NB_Network(object):
 
 				#southwest
 				self.nodes[7*i+7] = Routers.NBRouter(7*i+7, 0, self.gui_boolean)
-
-	def set_up_cache(self):
-		for node_id in self.nodes:
-			level = self.get_level(node_id)
-			self.nodes[node_id].cache_max = self.cache_slots[level]
 		
-	def prepare(self):
+	def prepare_content(self):
+		# Prepares and publishes content to nodes
+		choices = ['yes' for x in range(int(self.q*10))]
+		choices+= ['no' for x in range(int(self.q*10),10)]
 		content_index = 10000
-		node_count = 7**self.levels
-		content_count = node_count * self.q 
+		content_count = 1000 
 		i = 0
 		while ( i < content_count):
-			leaf_id = random.randint(self.lower_lim, self.upper_lim)
 			content_name = str(content_index)
-			self.publish_content(content_name, content_name, leaf_id)
+			for node_id in self.nodes:
+				decision = random.choice(choices)
+				if decision == 'yes':
+					self.update_forwarding_tables(content_name, content_name, node_id)
 			self.content_names.append(content_name)
 			content_index +=1
 			i += 1
@@ -917,19 +889,23 @@ class NB_Network(object):
 		#self.simulation_state.set("PLAYING")
 		#self.frame.update_idletasks()
 				
-	def publish_content( self,content_name, content_data, source_id):
+	def update_forwarding_tables( self,content_name, content_data, source_id):
+		# First, make this node the source of the content
 		self.nodes[source_id].content_store[content_name] =  content_data
 		
-		# Update all parents hash of source node until reaching root 0
+		# Next, update all parents forwarding tables until reaching node 0
 		current = source_id
 		parent_id = self.get_parent(source_id)
 		while ( parent_id != -1 ):    # get_parent of 0 always returns -1
-			self.nodes[parent_id].forwarding_table[content_name] = current
+			self.nodes[parent_id].update_forwarding(content_name,current)
 			current = parent_id
 			parent_id = self.get_parent(parent_id)
 		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
 
+
 	def assemble_regions(self):
+		# regions are a hexagonal collections of nodes that are around each other 
+		# each region has 7 nodes
 		node_id = self.lower_lim
 		while node_id in range(self.lower_lim,self.upper_lim + 1):
 			region = []
@@ -938,43 +914,23 @@ class NB_Network(object):
 				node_id += 1
 			self.regions.append(region)
 
-	def get_computation_power(self, node_id):
-		return self.computation_power[self.get_level(node_id)]
-			
-	def loop_step(self):
-		for node_id in reversed(range(0,self.upper_lim+1)):
-			self.process_without_gui(node_id)
-			for packet_list in self.nodes[node_id].pending_table.itervalues():
-				for p in packet_list:
-					p.ticks += 1 
-			
-	def send_packet(self, _type, content_name, from_id, dest_id, ticks, *args):
-		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
-		# Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
-		if args:
-			pack = Packet(0, _type, str(content_name), from_id,  dest_id, args[0])
-		else:
-			pack = Packet(0, _type, str(content_name), from_id,  dest_id)
-		pack.ticks += (1 + ticks) # Latency in delivering a packet
-		self.packets_to_be_delivered.append(pack)
+	def set_up_cache(self):
+			for node_id in self.nodes:
+				level = self.get_level(node_id)
+				self.nodes[node_id].cache_max = self.cache_slots[level]
 
-	def deliver_packets(self):
-		# Step 2 of 2, ofthe packet sending process
-		while (self.packets_to_be_delivered):
-			pack = self.packets_to_be_delivered.pop()
-			dest_id = pack.dest_id
-			self.nodes[dest_id].incoming.append(pack)
-			
-	def packet_generator(self,size):
-		logging.debug('packet_generator called, starting...')
-		for i in range(0,size):
-			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
-			requester_id = self.get_random_leaf_machine()
-			self.send_packet('request',content_name,-1,requester_id,0)
+	def set_TDD(self):
+		for node_id in self.nodes:
+			self.nodes[node_id].TDD = self.TDD
+			self.nodes[node_id].max_resends = self.max_resends
+	
 
-	def standard_traffic(self):
-		logging.debug('standard_traffic called, begginging packet_generator')
-		self.packet_generator(self.packet_frequency) # This can be changed to suiting 
+
+	
+
+
+
+	## Functions for simulation
 	
 	def run_simulator(self, warm_up_seconds, loop_seconds, packet_gen_interval, logging_interval):
 		self.sched.add_interval_job(self.standard_traffic,seconds=packet_gen_interval)
@@ -993,10 +949,7 @@ class NB_Network(object):
 			#self.packet_generator(50)
 
 	def event_loop(self, seconds, logging_interval):
-		#self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_rt_ticks, seconds=logging_interval)
-		#self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
-		#self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -1006,16 +959,67 @@ class NB_Network(object):
 			self.loop_step()
 			end = time.time()
 		self.sched.shutdown(wait=False)
-		#self.write_level_congestions()
 		self.write_rt_tick_means()
-		#self.write_packets_delivered()
-		#self.write_rt_by_level()
+
+	def loop_step(self):
+		for node_id in reversed(range(0,self.upper_lim+1)):
+			self.process_without_gui(node_id)
+			
+			
+	def prepare_packet(self, _type, content_name, from_id, dest_id, ticks, **kwargs):
+		# prepare_packet needed to seperate events that are to happen in the next 'unit of time' from occuring in current 'unit of time'
+		# i.e. Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
+		# We refer to units of time as 'ticks' - which is a single loop through the process_without_gui function
+		
+		if kwargs:
+			if 'content_data' in kwargs:
+				content_data = kwargs['content_data']
+			else:
+				content_data = None 
+
+			if 'is_copy' in kwargs:
+				is_copy = True
+			else: 
+				is_copy = False
+			pack = Packet(0, _type, str(content_name), from_id,  dest_id, content_data=content_data, is_copy=is_copy )
+		else:
+			pack = Packet(0, _type, str(content_name), from_id,  dest_id)
+		pack.ticks += (1 + ticks) # Latency in delivering a packet
+		self.packets_to_be_delivered.append(pack)
+
+	def deliver_packets(self):
+		# Step 2 of 2, of the packet sending process
+		while (self.packets_to_be_delivered):
+			pack = self.packets_to_be_delivered.pop()
+			dest_id = pack.dest_id
+			self.nodes[dest_id].incoming.append(pack)
+			
+	def request_generator(self,size):
+		logging.debug('packet_generator called, starting...')
+		for i in range(0,size):
+			content_name = self.content_names[random.randint(0,len(self.content_names)-1)]
+			requester_id = self.get_random_leaf_machine()
+			self.prepare_packet('request',content_name,-1,requester_id,0)
+
+	def standard_traffic(self):
+		logging.debug('standard_traffic called, begginging packet_generator')
+		self.request_generator(self.packet_frequency) # This can be changed to suiting 
+	
+	
+
 
 	def process_without_gui(self, node_id):
-		global process_start_time, process_end_time
+		node = self.nodes[node_id]
 		# higher level nodes have a faster computation model
 		comp_power = self.computation_power[self.level_ranges_dict[node_id]]
 		i = 0 
+
+		node.check_TTD(self)
+
+		for entry in self.nodes[node_id].pending_table.itervalues():
+			entry.current_TDD += 1
+			entry.life_ticks += 1
+
 		while i < comp_power:
 
 			if (self.nodes[node_id].incoming):
@@ -1025,67 +1029,90 @@ class NB_Network(object):
 				
 
 				if packet.type == 'request':   
-					  
-					# Case 1: content in cache
+				# Case 1: content is being requested 
+
+					# Case 1.A: content in cache
 					if packet.content_name in self.nodes[node_id].content_store:
 
-						if packet.origin_id == -1: # -1 signifies it is the source of the request
-						# Case where active request hasnt been created yet but content in cache
+						if packet.origin_id == -1: 
+						# Case 1.A.a: the request originated at the source
+						# -1 signifies it is the source of the request
 							logging.debug(" DONE! Content already cached, I am the source: %d" % node_id)
 							self.rt_tick_times.append(packet.ticks)
-							self.packets_delivered_count += 1
+							
 						else:
-							self.send_packet('response', packet.content_name,  node_id, packet.origin_id, packet.ticks, self.nodes[node_id].content_store[packet.content_name])
+						# Case 1.A.b: the request has arrived at the source of the content
+						# Send the content data back along the reverse path 
+							self.prepare_packet('response', packet.content_name,  node_id, packet.origin_id, packet.ticks, content_data=self.nodes[node_id].content_store[packet.content_name] )
 							logging.debug(" content %s already in cache", packet.content_name) 
 							logging.debug(" sent content back to  %d ", packet.origin_id)
 							
-					# Case 2: duplicate request exists
+					# Case 1.B: this router has already received a request for this content 
+					# and is currently awaiting a response. Do not send duplicate. 
 					elif packet.content_name in self.nodes[node_id].pending_table:   
 						packet.ticks += 1
-						self.nodes[node_id].pending_table[packet.content_name] += [packet]
+						self.nodes[node_id].pending_table[packet.content_name].received_packets.append(packet)
+						self.nodes[node_id].pending_table[packet.content_name].requesters.append(packet.origin_id)
 						#logging.debug(" duplicate request for content %s , added requester_id %d to PT", packet[content_name], packet[requester_id]) 
 						logging.debug(" duplicate request for content , added requester_id %d to PT", packet.origin_id) 
 					
 						
-					# Case 3: no pending request, but location lives in children, create entry in PT, send request to child
+					# Case 1.C: no pending request, but location lives in children, 
+					# create entry in PT, send request to child.
 					elif packet.content_name in self.nodes[node_id].forwarding_table:
-
-						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name]   #direction of child where destination node is contained 
-						self.nodes[node_id].pending_table[packet.content_name] = [packet]          # entry in PT created
-						self.send_packet( 'request', packet.content_name ,node_id, directed_child_id, packet.ticks)
+						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name].best_option   #direction of child where destination node is contained 
+						self.nodes[node_id].pending_table[packet.content_name] = PendingTable_Entry(packet.content_name, 0, directed_child_id, packet)         # entry in PT created
+						self.prepare_packet( 'request', packet.content_name ,node_id, directed_child_id, 0)
 						logging.debug(" location content %s known, entry for requester %d created in PT", packet.content_name, packet.origin_id) 
 						logging.debug(" forwarded request to child %d ", directed_child_id )
 
-					# Case 4: no duplicate, add to PT, forward to parent 
+					# Case 1.D: router does not know where content source is
+					# add to PT, forward to parent 
+
+					elif node_id == 0:
+						self.prepare_packet( 'response', packet.content_name ,node_id, directed_child_id, packet.ticks, no_content_exists=True)
+
 					else:
-						self.nodes[node_id].pending_table[packet.content_name] = [packet]
 						parent_id = self.get_parent(node_id)
-						self.send_packet('request', packet.content_name, node_id, parent_id, packet.ticks )
+						self.nodes[node_id].pending_table[packet.content_name] = PendingTable_Entry(packet.content_name, 0, parent_id, packet)
+						self.prepare_packet('request', packet.content_name, node_id, parent_id, 0 )
 						logging.debug(" content %s NOT known, entry for requester %d created in PT, sent request,  to parent %d", packet.content_name, packet.origin_id, parent_id) 
 					 	""" account for local ticks"""
 
 				elif packet.type == 'response':
-					# packet is a response
+				# Case 2: packet is a response
 
-					content_requesters_list = self.nodes[node_id].pending_table[packet.content_name]
-					for pack in content_requesters_list:
+					content_requesters_packets = self.nodes[node_id].pending_table[packet.content_name].received_packets
 
+					for pack in content_requesters_packets:
 						print logging.debug("Forwarding response along to all requesters, I am: %d ... ", node_id)
-						#Case 1: node is source of request, -1 signifies it is the source of request 
+						
+						# Case 2.A: node is source of request
+						# -1 signifies it is the source of request 
 						if pack.origin_id == -1:
-							self.rt_tick_times.append(min([pack.ticks,packet.ticks]))
-							self.packets_delivered_count += 1
+							life_ticks = pack.ticks + packet.ticks
+							self.rt_tick_times.append(life_ticks)
 							logging.debug(" DONE! I am the source: %d" % node_id)
+							if packet.no_content_exists:
+								logging.debug(" DONE! BUT NO CONTENT EXISTS")
 
 							
 						# Case 2: node was a middle man
 						else:
 							# Forward packet back to where the packet originated
-							self.send_packet('response', pack.content_name, node_id, pack.origin_id, pack.ticks, packet.content_data) 			
+
+							# Only update if node forwarded this down to child
+							# Otherwise it send it to parent and had no forwarding choice
+							if pack.content_name in node.forwarding_table:
+								self.nodes[node_id].update_forwarding_history(pack.content_name, packet.origin_id, packet.ticks)
+							
+							total_ticks = (pack.ticks + self.nodes[node_id].pending_table[pack.content_name].life_ticks)
+							self.prepare_packet('response', pack.content_name, node_id, pack.origin_id,
+								total_ticks, content_data= packet.content_data , no_content_exists=packet.no_content_exists) 			
 							logging.debug("Sent response along to requester %d ", pack.origin_id)
 							logging.debug("Forwarding to all requesters complete")
 
-					# Now that all packets have been process cache the content data and delete the PT entry
+					# Now that all packets have been processed cache the content data and delete the PT entry
 					self.nodes[node_id].cache_content(packet.content_name, packet.content_data)
 					logging.debug(" Added content (%s) to content store"  % packet.content_name)
 					del self.nodes[node_id].pending_table[packet.content_name]
@@ -1107,19 +1134,6 @@ class NB_Network(object):
 
 	## Functions for logging and writing Network statistics
 
-	def log_level_congestion(self):
-		self.total_congestions.append(copy.deepcopy(self.level_congestion))
-		for key in self.level_congestion:
-			self.level_congestion[key] = 0 
-
-	def write_level_congestions(self):
-		level_file = open("level_congestion.csv","a")
-		for dic in self.total_congestions:
-			string = ''
-			for key, value in dic.iteritems():
-				string += str(value) + ','
-			level_file.write(string.strip(',') + "\n")
-
 	def log_rt_ticks(self):
 		self.rt_tick_means.append(int(sum(self.rt_tick_times)/len(self.rt_tick_times)))
 		self.rt_tick_times = []
@@ -1131,16 +1145,6 @@ class NB_Network(object):
 		for mean in self.rt_tick_means:
 			rtt_file.write(str(mean) + "\n")
 
-	def log_packets_delivered(self):
-		self.packets_delivered_slices.append(self.packets_delivered_count)
-		self.packets_delivered_count = 0
-
-	def write_packets_delivered(self):
-		packets_file = open("packets_delivered_slices.csv","a")
-		for packets_count in self.packets_delivered_slices:
-			packets_file.write(str(packets_count) + "\n")
-
-
 
 
 
@@ -1151,6 +1155,11 @@ class NB_Network(object):
 		return self.level_ranges_dict[node_id]
 
 		logging.debug('Incorrect Node ID given at get_level')
+
+
+	def get_computation_power(self, node_id):
+		return self.computation_power[self.get_level(node_id)]
+	
 
 	def loop(self):
 		self.deliver_packets()

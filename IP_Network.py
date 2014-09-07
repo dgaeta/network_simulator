@@ -31,13 +31,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 #from matplotlib.backend_bases import key_press_handler
 
 
-def is_empty( any_structure):
-	if any_structure:
-		#print('Structure is not empty.')
-		return False
-	else:
-		#print('Structure is empty.')
-		return True
 
 class AutoScrollbar(tk.Scrollbar):
     # a scrollbar that hides itself if it's not needed.  only
@@ -54,12 +47,6 @@ class AutoScrollbar(tk.Scrollbar):
     def place(self, **kw):
         raise TclError, "cannot use place with this widget"
 
-
-def set_tick_ds(levels):
-	dictionary = {}
-	for i in range(0,levels+1):
-		dictionary[i] = []
-	return dictionary
 
 def set_congestion_ds(levels):
 	dictionary = {}
@@ -111,14 +98,14 @@ def set_computation_ds(levels):
 
 def set_cache_ds(levels):
 	dictionary = {}
-	slots = 20
+	slots = 0
 	for i in reversed(range(0,levels+1)):
-		#slots += 20
+		slots += 20
 		dictionary[i] = slots
 	return dictionary
 
 class IP_Network(object):
-	def __init__( self, levels, gui_boolean, p=.2, q=.2 ):
+	def __init__( self, levels, gui_boolean, p, q  ):
 		
 		# data structs for the network, core data structures
 		self.nodes = {}
@@ -129,15 +116,10 @@ class IP_Network(object):
 		self.regions = []
 		self.level_ranges_dict = set_level_ranges(levels, self.upper_lim) 
 
-		self.level_congestion = set_congestion_ds(levels)
-		self.total_congestions = []
 		self.packets_to_be_delivered = []
 		self.ip_rt_tick_times = []
 		self.ip_rt_tick_means = []
 		self.packets_delivered_count = 0 
-		self.packets_delivered_slices = []
-		self.rt_ticks_by_level = set_tick_ds(levels)
-		self.total_rt_by_levels = []
 		self.computation_power = set_computation_ds(levels)
 		self.cache_slots = set_cache_ds(levels)
 		self.packet_gen_job = None 
@@ -342,7 +324,6 @@ class IP_Network(object):
 		self.canvas.itemconfig(self.nodes[node_id].canvas_id, outline='grey', width=1.0)
 		self.canvas.itemconfig(self.nodes[self.get_actual_node(node_id)].canvas_id, outline='grey', width=1.0)
 		self.canvas.update()
-
 
 	def show_publish(self):
 		source_id = 1000
@@ -642,7 +623,7 @@ class IP_Network(object):
 	tk.Canvas.create_circle = _create_circle
 
 	def deliver_in_transit_packets(self):
-		if( not is_empty(self.in_transit_packets)):
+		if (self.in_transit_packets):
 			packet = self.in_transit_packets.pop()
 			dest_id = packet['dest_id']
 			if dest_id == -1 :
@@ -682,7 +663,7 @@ class IP_Network(object):
 			# add time of computation to packet lifetime
 			#t1 = time.time()
 
-			if (not is_empty(self.nodes[node_id].incoming)):
+			if (self.nodes[node_id].incoming):
 				logging.debug(' processing incoming packet at %d' % node_id)
 				packet = self.nodes[node_id].incoming.popleft()
 				logging.debug(" packet data: %s", str(packet)) 
@@ -776,7 +757,6 @@ class IP_Network(object):
 		self.nodes[0] = IPRouter(0, 0, self.gui_boolean)
 		self._build_without_gui(levels-1, 0)
 
-	
 	def _build_without_gui(self, level,i):  # Recursive helper
 		""" Helper function for build() """
 		#center = 7i+1
@@ -843,14 +823,17 @@ class IP_Network(object):
 				self.nodes[7*i+7] = Routers.IPRouter(7*i+7, 0, self.gui_boolean)
 
 	def prepare(self):
+		choices = ['yes' for x in range(int(self.q*10))]
+		choices+= ['no' for x in range(int(self.q*10),10)]
 		content_index = 10000
-		node_count = 7**self.levels
-		content_count = node_count * self.q 
+		content_count = 1000 
 		i = 0
 		while ( i < content_count):
-			leaf_id = random.randint(self.lower_lim, self.upper_lim)
 			content_name = str(content_index)
-			self.publish_content(content_name, content_name, leaf_id)
+			for node_id in self.nodes:
+				decision = random.choice(choices)
+				if decision == 'yes':
+					self.publish_content(content_name, content_name, node_id)
 			self.content_names.append(content_name)
 			content_index +=1
 			i += 1
@@ -867,7 +850,11 @@ class IP_Network(object):
 		current = source_id
 		parent_id = self.get_parent(source_id)
 		while ( parent_id != -1 ):    # get_parent of 0 always returns -1
-			self.nodes[parent_id].forwarding_table[content_name] = current
+			if content_name in self.nodes[parent_id].forwarding_table:
+				if not(current in  self.nodes[parent_id].forwarding_table[content_name]):
+					self.nodes[parent_id].forwarding_table[content_name].append(current)
+			else:
+				self.nodes[parent_id].forwarding_table[content_name] = [current]
 			current = parent_id
 			parent_id = self.get_parent(parent_id)
 		#logging.debug(' Completed updating FT of parents of %d ' % dest_id)
@@ -906,24 +893,19 @@ class IP_Network(object):
 				parent_id = self.get_parent(parent_id)
 		logging.debug('test PASSED')
 
-	def get_computation_power(self, node_id):
-		return self.computation_power[self.get_level(node_id)]
+	
 			
 	def loop_step(self):
-	
-		#pool = Pool(processes = 8)
-		#pool.map(self.step_through, range(0,self.upper_lim+1))
-		#pool.terminate()
 		for n in reversed(range(0, self.upper_lim + 1)):
 			self.ip_process_without_gui(n) 
 
 	
 
-	def send_packet(self, _id,  _type, content_name, from_id, dest_id, ticks, *args):
+	def send_packet(self, _id,  _type, content_name, from_id, dest_id, ticks, **kwargs):
 		# Needed to seperate events that are scheduled to happen from getting mixed up in the current events
 		# Step 1: Send_packets -> Step 2: Deliver_packets, makes them availible for processing
-		if args:
-			pack = Packet(_id, _type, str(content_name), from_id,  dest_id, args[0])
+		if kwargs:
+			pack = Packet(_id, _type, str(content_name), from_id,  dest_id, content_data=kwargs['content_data'])
 		else:
 			pack = Packet(_id, _type, str(content_name), from_id,  dest_id)
 		pack.ticks += (1 + ticks) # Latency in delivering a packet
@@ -966,10 +948,7 @@ class IP_Network(object):
 			#self.packet_generator(50)
 
 	def event_loop(self, seconds, logging_interval):
-		self.sched.add_interval_job(self.log_level_congestion, seconds=logging_interval)
 		self.sched.add_interval_job(self.log_rt_tick_times, seconds=logging_interval)
-		self.sched.add_interval_job(self.log_packets_delivered, seconds=logging_interval)
-		#self.sched.add_interval_job(self.log_rt_by_level, seconds=logging_interval)
 		duration_seconds = seconds
 		start = time.time()
 		end = time.time()
@@ -978,43 +957,10 @@ class IP_Network(object):
 			self.deliver_packets()
 			self.loop_step()
 			end = time.time()
-		self.sched.shutdown()
-		#self.write_level_congestions()
+		self.sched.shutdown(wait=False)
 		self.write_rtt_means()
-		#self.write_packets_delivered()
-		#self.write_rt_by_level()
 
-	def log_level_congestion(self):
-		self.total_congestions.append(copy.deepcopy(self.level_congestion))
-
-	def write_level_congestions(self):
-		level_file = open("ip_level_congestion.csv","a")
-		for dic in self.total_congestions:
-			string = ''
-			for key, value in dic.iteritems():
-				string += str(value) + ','
-			level_file.write(string.strip(',') + "\n")
-
-	def log_rt_tick_times(self):
-		self.ip_rt_tick_means.append(int(sum(self.ip_rt_tick_times)/len(self.ip_rt_tick_times)))
-		self.ip_rt_tick_times = []
-
-	def write_rtt_means(self):
-		file_name = "ip_rtt" +  "-l=" + str(self.levels) + "-p="+ str(self.p) + "-q=" + str(self.q) +  ".csv"
-		ip_rtt_file = open(file_name,"a")
-		for mean in self.ip_rt_tick_means:
-			ip_rtt_file.write(str(mean) + "\n")
-
-	def log_packets_delivered(self):
-		self.packets_delivered_slices.append(self.packets_delivered_count)
-		self.packets_delivered_count = 0
-
-	def write_packets_delivered(self):
-		packets_file = open("ip_packets_delivered_slices.csv","a")
-		for packets_count in self.packets_delivered_slices:
-			packets_file.write(str(packets_count) + "\n")
-
-
+	
 
 	def region_contained(self, high_node_id, low_node_id):
 		high_node = self.nodes[high_node_id]
@@ -1027,7 +973,6 @@ class IP_Network(object):
 			return False 
 
 	def ip_process_without_gui(self, node_id):
-		global process_start_time, process_end_time
 		# higher level nodes have a faster computation model
 		comp_power = self.computation_power[self.level_ranges_dict[node_id]]
 		i = 0 
@@ -1055,14 +1000,14 @@ class IP_Network(object):
 								dest_id = self.nodes[node_id].forwarding(packet.origin_id)
 							else:
 								dest_id = self.get_parent(node_id)
-							self.send_packet(packet.id, 'response', packet.content_name,  packet.origin_id, dest_id, packet.ticks, self.nodes[node_id].content_store[packet.content_name])
+							self.send_packet(packet.id, 'response', packet.content_name,  packet.origin_id, dest_id, packet.ticks, content_data=self.nodes[node_id].content_store[packet.content_name])
 							logging.debug(" content %s already in cache", packet.content_name) 
 							logging.debug(" sent content back along reverse path to node  %d ", dest_id)
 							
 
 					# Case 2: location of content lives in children, forward request to child, keep original origin_id of packet
 					elif packet.content_name in self.nodes[node_id].forwarding_table:
-						directed_child_id  = self.nodes[node_id].forwarding_table[packet.content_name]   #direction of child where destination node is contained 
+						directed_child_id  = random.choice(self.nodes[node_id].forwarding_table[packet.content_name])   #direction of child where destination node is contained 
 						self.send_packet( packet.id, 'request', packet.content_name ,packet.origin_id, directed_child_id, packet.ticks)
 						logging.debug(" forwarded request to child %d ", directed_child_id )
 						
@@ -1094,7 +1039,7 @@ class IP_Network(object):
 						else:
 							dest_id = self.get_parent(node_id)
 
-						self.send_packet(packet.id, 'response', packet.content_name, packet.origin_id, dest_id, packet.ticks, packet.content_data) 			
+						self.send_packet(packet.id, 'response', packet.content_name, packet.origin_id, dest_id, packet.ticks, content_data=packet.content_data) 			
 						logging.debug("Sent response back along reverse path to %d ", dest_id)
 					
 					# Now that all packets have been process cache the content data 
@@ -1114,11 +1059,28 @@ class IP_Network(object):
 
 
 
+	# Writing collected stats to file
+	def log_rt_tick_times(self):
+		self.ip_rt_tick_means.append(int(sum(self.ip_rt_tick_times)/len(self.ip_rt_tick_times)))
+		self.ip_rt_tick_times = []
+
+	def write_rtt_means(self):
+		file_name = "ip_rtt" +  "-l=" + str(self.levels) + "-p="+ str(self.p) + "-q=" + str(self.q) +  ".csv"
+		ip_rtt_file = open(file_name,"a")
+		for mean in self.ip_rt_tick_means:
+			ip_rtt_file.write(str(mean) + "\n")
+
+
+
+
 	## Utility Functions for Network Accessability 
 	def get_level(self, node_id):
 		return self.level_ranges_dict[node_id]
 
 		logging.debug('Incorrect Node ID given at get_level')
+
+	def get_computation_power(self, node_id):
+		return self.computation_power[self.get_level(node_id)]
 
 	def set_up_cache(self):
 		for node_id in self.nodes:

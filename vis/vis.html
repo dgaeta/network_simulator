@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>NB Conflict Res</title>
+    </head>
+    <body>
+        <div id="container"></div>
+        <script src="http://cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"></script>
+        <link rel="stylesheet" type="text/css" href="mystyle.css">
+        <script>
+            var colorGlobal = [];
+            var node_idGlobal = [];
+            var disabled = false;
+            var published_already = false;
+            var publish_count = 0;
+            var TTD = 10;
+            var max_resends = 3;
+
+            function update_pub_count(){
+                publish_count += 1;
+                if (publish_count > 2) {
+                    published_already = true;
+                };
+            }
+
+            function remove(array, item){
+                var position = 0;
+                for (i in array){
+                    if (array[i] == item){
+                        position = i;
+                        //console.log(i);
+                        break;
+                    }
+                }
+
+                array.splice(position,1);
+
+            }
+
+            function Network(levels) {
+                this.nodes = {};
+                this.levels = levels;
+                this.in_transit_packets = [];
+            }
+
+            function Packet(content_name, from_id, to_id, type, ticks){
+                this.type = type;
+                this.content_name = content_name;
+                this.from_id = from_id;
+                this.to_id = to_id;
+                this.ticks = ticks + 1;
+            }
+
+            function packet_to_string(packet){
+                string = 'Packet: ' + '\n' + 'content name: ' + String(packet.content_name) + '\n';
+                string += 'from id: ' + String(packet.from_id) + '\n';
+                string += 'to id: ' + String(packet.to_id);
+                return string;
+            }
+
+            function Router(id, circle) {
+                this.id = id;
+                this.figure = circle;
+                this.incoming = [];
+                this.forwarding_table = {};
+                this.pending_table = {};
+                this.content_store = {};
+                this.multiple_sources = {};
+                this.active_requests_to_children = {};
+            }
+
+            function ForwardingTable_Entry(content_name, forward_to){
+                this.content_name = content_name;
+                this.forwarding_options = [forward_to];
+                this.historical_ticks = {};
+                this.best_option = this.forwarding_options[0];
+            }
+
+            function PendingTable_Entry(content_name, forwarded_to, requester){
+                this.content_name = content_name;
+                this.forwarded_to = forwarded_to;
+                this.requesters = [requester];
+                this.sent_down = false;
+                this.current_TDD = 0;
+                this.resends = 0;
+            }
+
+            function draw_network(paper, network, x, y, r) {
+                var x_origin = x;
+                var y_origin = y;
+                var radius = r;
+                var circle = paper.circle(x_origin, y_origin, radius).attr({
+                    stroke: "grey",
+                    'stroke-width': 1
+                });
+                network.nodes[0] = new Router(0,circle);
+                _draw_network(paper, network, network.levels, 0, radius/3, x_origin, y_origin);
+            }
+
+            function _draw_network(paper, network, level, i, r, x, y) {
+               
+                if (level > 0) {
+
+                    //center
+                    var circle = paper.circle(x, y, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 1] = new Router(7 * i + 1, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 1, r / 3, x, y);
+
+                    //north
+                    var circle = paper.circle(x, y - 2 * r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 2] = new Router(7 * i + 2, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 2, r / 3, x, y - 2 * r);
+
+                    //south 
+                    var circle = paper.circle(x, y + 2 * r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 3] = new Router(7 * i + 3, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 3, r / 3, x, y + 2 * r);
+
+                    //northeast 
+                    var circle = paper.circle(x + 2 * r * Math.sqrt(3) / 2, y - r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 4] = new Router(7 * i + 4, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 4, r / 3, x + 2 * r * Math.sqrt(3) / 2, y - r);
+
+                    //southeast 
+                    var circle = paper.circle(x + 2 * r * Math.sqrt(3) / 2, y + r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 5] = new Router(7 * i + 1, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 5, r / 3, x + 2 * r * Math.sqrt(3) / 2, y + r);
+
+                    //northwest 
+                    var circle = paper.circle(x - 2 * r * Math.sqrt(3) / 2, y - r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 6] = new Router(7 * i + 6, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 6, r / 3, x - 2 * r * Math.sqrt(3) / 2, y - r);
+
+                    //southwest 
+                    var circle = paper.circle(x - 2 * r * Math.sqrt(3) / 2, y + r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 7] = new Router(7 * i + 7, circle);
+                    _draw_network(paper, network, level - 1, 7 * i + 7, r / 3, x - 2 * r * Math.sqrt(3) / 2, y + r);
+
+                } else {
+
+                    //center
+                    var circle = paper.circle(x, y, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 1] = new Router(7 * i + 1, circle);
+
+                    //north
+                    var circle = paper.circle(x, y - 2 * r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 2] = new Router(7 * i + 2, circle);
+
+                    //south 
+                    var circle = paper.circle(x, y + 2 * r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 3] = new Router(7 * i + 3, circle);
+
+                    //northeast 
+                    var circle = paper.circle(x + 2 * r * Math.sqrt(3) / 2, y - r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 4] = new Router(7 * i + 4, circle);
+
+                    //southeast 
+                    var circle = paper.circle(x + 2 * r * Math.sqrt(3) / 2, y + r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 5] = new Router(7 * i + 5, circle);
+
+                    //northwest 
+                    var circle = paper.circle(x - 2 * r * Math.sqrt(3) / 2, y - r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 6] = new Router(7 * i + 6, circle);
+
+                    //southwest 
+                    var circle = paper.circle(x - 2 * r * Math.sqrt(3) / 2, y + r, r).attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    network.nodes[7 * i + 7] = new Router(7 * i + 7, circle);
+
+                }
+
+            }
+
+            function NGon(x, y, N, side, angle) {
+                    //paper.circle(x, y, 3).attr("fill", "black");
+                        
+                    var path = "",
+                        c, temp_x, temp_y, theta;
+                    
+                    for (c = 0; c <= N; c += 1) {
+                        theta = c / N * 2 * Math.PI;
+                        temp_x = x + Math.cos(theta) * side;
+                        temp_y = y + Math.sin(theta) * side;
+                        path += (c === 0 ? "M" : "L") + temp_x + "," + temp_y;
+                    }
+                    return path;
+                }
+
+            function N2Gon(x, y, N, side, angle) {
+                //paper.circle(x, y, 3).attr("fill", "black");
+                    
+                var path = "",
+                    c, temp_x, temp_y, theta;
+                
+                for (c = 0; c <= 2*N; c += 1) {
+                    theta = Math.floor(c / 2) / N * 2 * Math.PI;
+                    temp_x = x + Math.cos(theta) * side;
+                    temp_y = y + Math.sin(theta) * side;
+                    path += (c === 0 ? "M" : "L") + temp_x + "," + temp_y;
+                }
+                return path;
+            }
+
+            function N2GonPathArray(x, y, N, side, angle) {
+                //paper.circle(x, y, 3).attr("fill", "black");
+                    
+                var path_arr = [],
+                    c, temp_x, temp_y, theta, startx, starty ;
+                
+                for (c = 0; c <= 2*N; c += 1) {
+                    theta = Math.floor(c / 2) / N * 2 * Math.PI;
+                    temp_x = x + Math.cos(theta) * side;
+                    temp_y = y + Math.sin(theta) * side;
+                    if (c == 0) { startx=temp_x; starty=temp_y;};
+                    path_arr.push( "M" + startx + ',' + starty + 'L' + temp_x + "," + temp_y);
+                    startx = temp_x;
+                    starty = temp_y;
+                }
+                return path_arr;
+            }
+
+            function rotation(polygon_array,i){
+                var sides = polygon_array.length - 1;
+                var o = Math.abs((i - 1) % sides);
+                var n = i %sides;
+                polygon_array[o].attr({stroke:'grey', 'stroke-width':1, 'stroke-linecap':'round'});
+                polygon_array[n].attr({stroke:'blue', 'stroke-width':2, 'stroke-linecap':'round'});
+                i += 1;
+                setTimeout(rotation, 50, polygon_array, i);
+            }
+
+            function N2GonToPaper(path_array){
+                var figure_array = [];
+                for (i in path_array){
+                    var holder = paper.path(path_array[i]).attr({stroke:'grey'})
+                    figure_array.push(holder);
+                }
+                return figure_array;
+            }
+
+            
+
+            function highlight(node_id, bool){
+                if (bool){
+                    net.nodes[node_id].figure.attr({
+                        stroke: "blue",
+                        'stroke-width': 2
+                    });
+                    setTimeout(highlight, 1000, node_id,false);
+                } else {
+                    net.nodes[node_id].figure.attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                }
+            }
+
+
+            function publish(network, node_id, content_name, child_id) {
+
+                if (node_id == -1) {
+                    // no more parents to notify
+                    network.nodes[child_id].figure.attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    return;
+                }
+                
+                var node = network.nodes[node_id];
+                //case 1: this is the leaf (origin of publish)
+                if (child_id == 0) {
+                    if (!published_already) {
+                        console.log("Published");
+                        node.content_store[content_name] =  content_name;
+                        update_pub_count();
+                    };
+
+                    node.figure.attr({
+                        stroke: "purple",
+                        'stroke-width': 2
+                    });
+                    console.log(node_id);
+                    setTimeout(publish, 1000, network, get_parent(node_id), content_name, node_id);
+                } else {
+                    // case 2: this is a parent
+
+                    network.nodes[child_id].figure.attr({
+                        stroke: "grey",
+                        'stroke-width': 1
+                    });
+                    node.figure.attr({
+                        stroke: "purple",
+                        'stroke-width': 2
+                    });
+                    console.log(node_id);
+
+                    if (!published_already ) {
+                        console.log('Updating forwarding tables');
+                        if (content_name in node.forwarding_table) {
+                            //case 2.a: this is a parent and this is the first duplicate for this node
+                            //source1 = node.forwarding_table[content_name];
+                            // node.multiple_sources[content_name] = {};
+                            // node.multiple_sources[content_name][source1] = 0;
+                            // node.multiple_sources[content_name][child_id] = 0;
+                            node.forwarding_table[content_name].forwarding_options.push(child_id);
+                        } else {
+                            //case 2.c: no duplicates exist under this node
+                            node.forwarding_table[content_name] = new ForwardingTable_Entry(content_name, child_id);
+                        }
+                    };
+                    setTimeout(publish, 1000, network, get_parent(node_id), content_name, node_id);
+
+                }
+               
+            }
+
+            function request(network, origin_node_id, content_name ){
+                var packet = new Packet(content_name, -1, origin_node_id, 'request', 0);
+                network.in_transit_packets.push(packet);
+            }
+
+            function deliver_in_transit_packets(){
+                while(net.in_transit_packets.length > 0){
+                    var packet = net.in_transit_packets.pop();
+                    if (net.nodes[packet.to_id].figure.attr('stroke') == "red" || net.nodes[packet.to_id].figure.attr('stroke') == "orange") {return;};
+                    net.nodes[packet.to_id].incoming.push(packet);
+                    
+
+                    if (packet.type == 'request') {
+                        net.nodes[packet.to_id].figure.attr({
+                            stroke: "blue",
+                            'stroke-width': 2
+                        });
+                    } else {
+                        net.nodes[packet.to_id].figure.attr({
+                            stroke: "purple",
+                            'stroke-width': 2
+                        });
+                    }
+                    
+                }
+            }
+
+            function step () {
+                for (index in net.nodes){
+                    process(index);
+                }
+            }
+
+            function process(index){
+                node_id = index;
+                node = net.nodes[node_id];
+                if (node.figure.attr('stroke') == "red" || node.figure.attr('stroke') == "orange") { 
+                    return; 
+                }
+
+                
+                for (content_name in node.pending_table){
+                    for (entry in node.pending_table[content_name]){
+                        entry.current_TDD += 1;
+                        if (entry.current_TDD > TTD){
+                            if (entry.resends < max_resends) {
+                                entry.current_TDD = 0;
+                                entry.resends += 1;
+                                var directed_child_id = entry.forwarded_to;
+                                var new_packet = new Packet(packet.content_name, node_id, directed_child_id, 'request', 0);
+                                net.in_transit_packets.push(new_packet);
+                            } else {
+                                var index = array.indexOf(entry.forwarded_to);
+                                node.forwarding_table[entry.content_name].forwarding_options.splice(index,1);
+                                var new_direction = node.forwarding_table[entry.content_name].best_option;
+                                var new_packet = new Packet(packet.content_name, node_id, new_direction, 'request', 0);
+                                net.in_transit_packets.push(new_packet);
+                            }
+                            
+                        } 
+                    }
+                }
+
+                if (net.nodes[node_id].incoming.length > 0){
+                    packet = net.nodes[node_id].incoming.pop();
+                    console.log(packet_to_string(packet));
+
+                    if (packet.type == 'request') {
+                        //case 1: packet is a request
+
+                        if (packet.content_name in node.content_store) {
+                            //case 1.a: node has content in cache
+                            console.log('done. I have the content.');
+                            console.log('sending back to requester');
+                            var new_packet= new Packet(packet.content_name, node_id, packet.from_id, 'response',packet.ticks);
+                            net.in_transit_packets.push(new_packet);
+                            makeAnim(node_id,packet.from_id,'response');
+                            
+
+                        } else if (packet.content_name in node.pending_table) {
+                            //case 1.c: a request for this content already exists and there is only one optional child to get content from
+                            node.pending_table[packet.content_name].requesters.push(packet.from_id);
+
+                        } else if (packet.content_name in node.forwarding_table) {
+                            //case 1.d: there is only an option to forward request to a child and no duplicate request exists
+                            var best_option = node.forwarding_table[packet.content_name].best_option;
+                            node.pending_table[packet.content_name] = new PendingTable_Entry(content_name, best_option, packet.from_id);
+                            node.pending_table[packet.content_name].sent_down = true;
+                            var new_packet = new Packet(packet.content_name, node_id, best_option, 'request', packet.ticks);
+                            net.in_transit_packets.push(new_packet);
+
+                            makeAnim(node_id,best_option,'request');
+
+                        } else {
+                            //case 1.e: node has no idea where this content is and hasn't seen a request for it, send it to his parent
+                            var parent_id = get_parent(node_id);
+                            node.pending_table[packet.content_name] = new PendingTable_Entry(packet.content_name, parent_id, packet.from_id);;
+                            var new_packet = new Packet(packet.content_name, node_id, parent_id, 'request', packet.ticks);
+                            net.in_transit_packets.push(new_packet);
+
+                            makeAnim(node_id, parent_id, 'request');
+                        }
+                    } else {
+                        //else packet is a response
+                        if (packet.content_name in node.pending_table) {
+                            for (requester_id in node.pending_table[packet.content_name].requesters){
+                                if (requester_id == -1) {
+                                    console.log('Done. I am the source');
+                                    (node.id === 228 ? keep_spinning1=false  : keep_spinning2=false);
+                                } else {
+                                    //node was a middle man
+                                    var packet_response = new Packet(packet.content_name, node_id, requester_id, 'response', packet.ticks);
+                                    net.in_transit_packets.push(packet_response);
+                                    makeAnim(node_id, requester_id, 'response');
+                                }
+
+                               
+                            }
+                        }
+                        delete node.pending_table[packet.content_name];
+
+                    }
+
+                    if (node.incoming == 0) {
+                        node.figure.attr({stroke: "grey",'stroke-width': 1});
+                    };      
+                }
+            }
+
+            function get_parent(node_id) {
+                n = node_id;
+                if (n == 0){ 
+                    return -1;
+                } else if (n <= 7) {
+                    return 0;
+                } else if (n%7 == 1) {
+                    return parseInt(n/7);
+                }
+                else {
+                    return parseInt(get_parent((n - ((n-1)%7))));
+                }
+            }
+
+            
+
+            //helper for associative array (why it not do this already? arrrr!)
+            function get_first_pair(associative_array){
+                var key_val_pairs = [];
+                for (var key in associative_array) {
+                  if (associative_array.hasOwnProperty(key)) {
+                        key_val_pairs.push({'key':key, 'value':associative_array[key]});
+                    }
+                }
+                return key_val_pairs[0]
+            }
+
+            Object.length = function(associative_array){
+                var count = 0
+                for (x in associative_array) {
+                    count++;
+                }
+                return count;
+            }
+
+            function turnMeRed(e) {
+                mycircle.attr({stroke: "red", "stroke-width":2});
+                disabled = true;
+                setTimeout(turnMeOrange, 2000);
+            }
+
+            function turnMeOrange(e) {
+                mycircle.attr({stroke: "orange", "stroke-width":2});
+                setTimeout(turnMeRed, 2000);
+            }
+
+            function whenDone(e) {
+                console.log(node_idGlobal);
+                console.log(colorGlobal);
+                col = colorGlobal.pop();
+                node_id = node_idGlobal.pop();
+
+                net.nodes[node_id].figure.attr({stroke: col, "stroke-width":2});
+                this.remove()
+            }
+
+            function makeAnim(origin_id, dest_id, type) {
+                if (type == 'request') {
+                    color = 'blue';
+                } else {
+                    color = 'purple'
+                }
+
+                origin_node = net.nodes[origin_id];
+                colorGlobal.push(color);
+                node_idGlobal.push(dest_id);
+                orig_attr = origin_node.figure.attr();
+
+                var circleStart = paper.circle(orig_attr['cx'], orig_attr['cy'], orig_attr['r']).attr({stroke: color,'stroke-width': 2});
+
+                dest_attr = net.nodes[dest_id].figure.attr();
+                var anim = Raphael.animation({ cx: dest_attr['cx'], cy: dest_attr['cy'], r:dest_attr['r'], easing:'easeIn'},2000, whenDone);
+                
+                circleStart.animate(anim);
+
+            }
+
+            function dragstart(x, y, e) {
+                // save the value of the transformation at the start of the drag
+                // if this is the initial drag, it will be a blank string
+                this.current_transform = this.transform();
+                // just for kicks
+                this.attr("fill", "orange");
+            }
+            function dragmove(dx, dy, x, y, e) {
+                // adjust the pre-existing transformation (if any) by the drag difference
+                this.transform(this.current_transform+'T'+dx+','+dy);
+            }
+
+            function dragend(e) {
+                // update the current transformation with the final value
+                this.current_transform = this.transform();
+                // that's enough kicks
+                this.attr("fill", "yellow").transform("T0,0");
+            }
+
+
+            function publish1(e) {
+                console.log('in here');
+                publish(net,343,'espn',0);
+                //server1.unhover(publish1);
+            }
+
+            function publish2(e) {
+                publish(net,399,'espn',0);
+                //server2.unhover(publish2)
+            }
+
+            // function request1(e) {
+            //     console.log('in here');
+            //     request(net,228,'espn');
+            //     server1.unhover(request1);
+            //     deliver_in_transit_packets();
+            // }
+
+            function request1(e){
+                request(net,228,'espn');
+                keep_spinning1 = true;
+                rotate();
+                send_request_anim(guy, net.nodes[228].figure);
+                
+            }
+
+            // function request2(e) {
+            //     request(net,285,'espn');
+            //     server2.unhover(request2)
+            //     deliver_in_transit_packets();
+            // }
+            function request2(e){
+                request(net,285,'espn');
+                keep_spinning2 = true;
+                rotate2();
+                send_request_anim(girl, net.nodes[285].figure);
+            }
+
+            function send_request_anim(requester, dest){
+                var req_circle = paper.circle(requester.attr('x'),requester.attr('y'),1);
+                tearDownObjects.push(req_circle);
+                var anim = Raphael.animation({cx:dest.attr('cx'), cy:dest.attr('cy'), r:dest.attr('r')},1000, deliver_in_transit_packets)
+                console.log('in here');
+                
+                req_circle.animate(anim);
+                setTimeout(circleTearDown,1000);
+                setTimeout(deliver_in_transit_packets,1000);
+
+            }
+
+
+
+            function circleTearDown(e) {
+                var circle = tearDownObjects.pop();
+                circle.remove();
+            }
+
+
+            function sim_iteration(e) {
+                step();
+                setTimeout(deliver_in_transit_packets,2000);
+            }
+
+            var paper = Raphael("container",950, 800);
+            var net = new Network(2);
+            tearDownObjects = [];
+
+            draw_network(paper, net, 500, 500, 300);
+
+            var mycircle = net.nodes[343].figure;
+            mycircle.mouseover(turnMeRed);
+
+            var fb = paper.image("fb.png",300,50, 100,75);
+            fb.drag(dragmove, dragstart, dragend);
+
+            var wp = paper.image("wp.png",600,50, 100,75);
+            wp.drag(dragmove, dragstart, dragend);
+
+            var server1 = paper.image("server2.png", 25, 350, 75, 65);
+            var server2 = paper.image("server2.png", 25, 630, 75, 65);
+
+            server1.hover(publish1);
+            server2.hover(publish2);
+
+            var guy = paper.image('guy.png', 875, 320, 40,40);
+            var girl = paper.image('girl.png', 855, 650, 40,40);
+
+            // var path_array = N2GonPathArray(895, 340, 50, 30);
+            // var polygon_array = N2GonToPaper(path_array);
+            // rotation(polygon_array, 0);
+
+            //guy.hover(send_request_anim);
+            guy.hover(request1);
+            girl.hover(request2);
+
+
+            var play = paper.path('M21.167,5.5,21.167,13.681,6.684,5.318,6.684,25.682,21.167,17.318,21.167,25.5,25.5,25.5,25.5,5.5z').transform("T485,160").attr({'fill':'black'});
+            play.click(sim_iteration);
+            
+
+            var tri1 = paper.path("M100,340 L240,376 L100,420").attr({stroke:'grey'});
+            var tri2 = paper.path("M100,620 L240,644 L100,695").attr({stroke:'grey'});
+
+            var keep_spinning1 = true;
+            var keep_spinning2 = true;
+
+            var angle = 1;
+            var waiting = paper.path('M24.083,15.5c-0.009,4.739-3.844,8.574-8.583,8.583c-4.741-0.009-8.577-3.844-8.585-8.583c0.008-4.741,3.844-8.577,8.585-8.585c1.913,0,3.665,0.629,5.09,1.686l-1.782,1.783l8.429,2.256l-2.26-8.427l-1.89,1.89c-2.072-1.677-4.717-2.688-7.587-2.688C8.826,3.418,3.418,8.826,3.416,15.5C3.418,22.175,8.826,27.583,15.5,27.583S27.583,22.175,27.583,15.5H24.083z').transform('T880,360 S0').attr({'fill':'black'});
+            //rotate();
+
+             var waiting2 = paper.path('M24.083,15.5c-0.009,4.739-3.844,8.574-8.583,8.583c-4.741-0.009-8.577-3.844-8.585-8.583c0.008-4.741,3.844-8.577,8.585-8.585c1.913,0,3.665,0.629,5.09,1.686l-1.782,1.783l8.429,2.256l-2.26-8.427l-1.89,1.89c-2.072-1.677-4.717-2.688-7.587-2.688C8.826,3.418,3.418,8.826,3.416,15.5C3.418,22.175,8.826,27.583,15.5,27.583S27.583,22.175,27.583,15.5H24.083z').transform('T880,660 S0').attr({'fill':'black'});
+
+            function rotate() {
+                angle = (angle+1) % 360;
+                waiting.transform('T880,360 S.7 r' + String(angle)).attr({'fill':'black', 'fill-opacity':0.3, 'stroke':'black' ,'stroke-opacity':0.3});
+                if (keep_spinning1) { 
+                    setTimeout(rotate,10)
+                } else {
+                    waiting.transform('s0');
+                }
+            }
+
+            function rotate2() {
+                angle = (angle+1) % 360;
+                waiting2.transform('T860,690 S.7 r' + String(angle)).attr({'fill':'black', 'fill-opacity':0.3, 'stroke':'black' ,'stroke-opacity':0.3});
+                if (keep_spinning2) {
+                    setTimeout(rotate2,10);
+                } else {
+                    waiting2.transform('s0');
+                } 
+            }
+
+            
+    
+        </script>
+    </body>
+</html>
+            
